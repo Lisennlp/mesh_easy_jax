@@ -3,7 +3,7 @@ import json
 import time
 
 import jax
-import jax.numpy as np
+import jax.numpy as jnp
 import numpy as np
 import optax
 
