@@ -35,7 +35,7 @@ from jax.experimental.maps import thread_resources
 from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
 from jax.experimental.pjit import pjit
 
-from mesh_transformer.jax_utils import (
+from jax_utils import (
     JaxRNG, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
@@ -999,6 +999,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         return metrics
 
+    def init_from_params(self, params):
+        opt_state = self.optimizer.init(params)
+        return {'params': params, 'opt_state': opt_state, 'step': 0}
      
     def init_fn(self, rng):
         rng_generator = JaxRNG(rng)
@@ -1012,7 +1015,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         return {'params': params, 'opt_state': opt_state, 'step': 0}
     
         
-    def init_state(self):
+    def init_state(self, load_checkpoint=False):
         self.optimizer = self.config.optimizer
         train_state_shapes = jax.eval_shape(self.init_fn, next_rng())
         train_state_partition = match_partition_rules(
@@ -1022,6 +1025,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                             in_shardings=PS(),
                             out_shardings=train_state_partition
                                         )
+        self.init_from_params_ = pjit(self.init_from_params,
+                                    in_shardings=(train_state_partition['params'], ),
+                                    out_shardings=train_state_partition,
+                                    donate_argnums=(0, ),
+                        )
         self.train_ = pjit(self.train_step,
                           in_shardings=(train_state_partition, PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
@@ -1032,6 +1040,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                         in_shardings=(train_state_partition, PS()),
                         out_shardings=(PS()),
                         donate_argnums=(1,),
+    )
+        self.shard_fns, gather_fns = make_shard_and_gather_fns(
+                                                              train_state_partition, train_state_shapes
     )
         import haiku as hk
         key = hk.PRNGSequence(42)
@@ -1049,7 +1060,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("mp", mp)
         self.gen_length = 1
         _key = next_rng()
-        self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
+        if load_checkpoint:
+            _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes, shard_fns)
+            self.state = self.init_from_params(restored_params)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
+            del restored_params
+        else:
+            self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         

@@ -21,16 +21,18 @@ from google.cloud import storage
 # from google.cloud.exceptions import NotFound
 
 from mesh_transformer.util import clip_by_global_norm, additive_weight_decay, Timer  # XD
-from mesh_transformer.llama_model import (
+from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
 )
 
-from mesh_transformer.jax_utils import (
+from easylm.jax_utils import (
     JaxRNG, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, with_sharding_constraint
 )
+from easylm.checkpoint import StreamingCheckpointer
+
 
 def parse_args():
     # Parse command line arguments
@@ -179,8 +181,15 @@ if __name__ == "__main__":
     end_lr = params["end_lr"]
     weight_decay = params["weight_decay"]
     intermediate_size = params['intermediate_size']
-   
-    
+
+    checkpoint_config = StreamingCheckpointer.get_default_config()
+    checkpointer = StreamingCheckpointer(
+        checkpoint_config, 'output/',
+        enable=jax.process_index() == 0,
+    )
+    params['checkpointer'] = checkpointer
+    params['load_checkpoint'] = '/home/lishengping/models/trans_7b/llama_trans_7b.stream'
+
     # alpha parameter for the exponential moving averages used to compute B_simple
     noise_scale_alpha = params.get("noise_scale_alpha", 0.01)
 
