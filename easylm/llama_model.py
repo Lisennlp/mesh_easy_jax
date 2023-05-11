@@ -1015,7 +1015,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         return {'params': params, 'opt_state': opt_state, 'step': 0}
     
         
-    def init_state(self, load_checkpoint=False):
+    def init_state(self):
         self.optimizer = self.config.optimizer
         train_state_shapes = jax.eval_shape(self.init_fn, next_rng())
         train_state_partition = match_partition_rules(
@@ -1060,7 +1060,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("mp", mp)
         self.gen_length = 1
         _key = next_rng()
-        if load_checkpoint:
+        if self.config.load_checkpoint:
             _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes, shard_fns)
             self.state = self.init_from_params(restored_params)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
             del restored_params
