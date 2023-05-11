@@ -8,3 +8,4 @@ download
 *.csv
 *.swp
 *.ipynb
+__pycache__
