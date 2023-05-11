@@ -3,6 +3,7 @@ import json
 import time
 
 import jax
+import jax.numpy as np
 import numpy as np
 import optax
 
@@ -16,6 +17,7 @@ from mesh_transformer.transformer_shard import CausalTransformer
 from tfrecord_loader import TFRecordNewInputs, load_tfrecord_dataset
 from smart_open import open
 from google.cloud import storage
+
 # from google.cloud.exceptions import NotFound
 
 from mesh_transformer.util import clip_by_global_norm, additive_weight_decay, Timer  # XD
@@ -52,6 +54,7 @@ def parse_args():
     parser.add_argument("--tune-model-path", type=str, default=None, help="Base model to finetune")
     parser.add_argument("--fresh-opt", default=False, action="store_true", help="Use a newly initialized optimizer, ignoring any optimizer state saved in the base checkpoint")
     parser.add_argument("--jax_method", type=str, default=None, help="Config file location")
+    parser.add_argument("--opt_type", type=str, default=None, help="Config file location")
 
     args = parser.parse_args()
     return args
@@ -176,24 +179,45 @@ if __name__ == "__main__":
     end_lr = params["end_lr"]
     weight_decay = params["weight_decay"]
     intermediate_size = params['intermediate_size']
-    
-    
    
     
     # alpha parameter for the exponential moving averages used to compute B_simple
     noise_scale_alpha = params.get("noise_scale_alpha", 0.01)
 
-    scheduler = util.gpt3_schedule(warmup_steps, anneal_steps, lr, end_lr)
-    
-    opt = optax.chain(
-        optax.scale(1 / gradient_accumulation_steps),
-        clip_by_global_norm(1, use_psum=params.get('transformation', 'xmap') == 'xmap'),  # XD
-        optax.scale_by_adam(),
-        additive_weight_decay(weight_decay),
-        optax.scale(-1),
-        optax.scale_by_schedule(scheduler)
-    )
-
+    if args.opt_type == 'mesh':
+        scheduler = util.gpt3_schedule(warmup_steps, anneal_steps, lr, end_lr)
+        opt = optax.chain(
+            optax.scale(1 / 1),
+            clip_by_global_norm(1, use_psum=params.get('transformation', 'xmap') == 'xmap'),  # XD
+            optax.scale_by_adam(),
+            additive_weight_decay(weight_decay),
+            optax.scale(-1),
+            optax.scale_by_schedule(scheduler)
+        )
+    else:
+        learning_rate_schedule = optax.warmup_cosine_decay_schedule(
+                init_value=0.001,
+                peak_value=0.01,
+                warmup_steps=2000,
+                decay_steps=500000,
+                end_value=0.001,
+            )
+        opt = optax.chain(
+                    optax.clip_by_global_norm(1.0),
+                    optax.adafactor(
+                        learning_rate=learning_rate_schedule,
+                        multiply_by_parameter_scale=True,
+                        momentum=0.9,
+                        decay_rate=0.95,
+                        factored=False,
+                        clipping_threshold=None,
+                        dtype_momentum=jnp.bfloat16,
+                    ),
+                    # optax_add_scheduled_weight_decay(
+                    #     lambda step: -learning_rate_schedule(step) * config.weight_decay,
+                    #     weight_decay_mask
+                    # )
+                    )
     params["optimizer"] = opt
     
     llama_config = LLaMAConfig(**params)
