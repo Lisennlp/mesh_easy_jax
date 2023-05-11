@@ -188,7 +188,7 @@ if __name__ == "__main__":
         enable=jax.process_index() == 0,
     )
     params['checkpointer'] = checkpointer
-    params['load_checkpoint'] = '/home/lishengping/models/trans_7b/llama_trans_7b.stream'
+    params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
 
     # alpha parameter for the exponential moving averages used to compute B_simple
     noise_scale_alpha = params.get("noise_scale_alpha", 0.01)

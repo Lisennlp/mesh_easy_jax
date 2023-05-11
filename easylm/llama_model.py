@@ -28,21 +28,20 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from mesh_transformer.jax_utils import (
-    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
-)
 from jax.experimental.maps import thread_resources
 from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
 from jax.experimental.pjit import pjit
 
-from jax_utils import (
+from easylm.jax_utils import (
     JaxRNG, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, with_sharding_constraint
 )
 import optax
-
+from easylm.jax_utils import (
+    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
+)
 
 LLAMA_STANDARD_CONFIGS = {
     '3b': {
@@ -1042,7 +1041,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                         donate_argnums=(1,),
     )
         self.shard_fns, gather_fns = make_shard_and_gather_fns(
-                                                              train_state_partition, train_state_shapes
+                                                              train_state_partition['params'], train_state_shapes['params']
     )
         import haiku as hk
         key = hk.PRNGSequence(42)
@@ -1061,7 +1060,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.gen_length = 1
         _key = next_rng()
         if self.config.load_checkpoint:
-            _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes, shard_fns)
+            _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns)
             self.state = self.init_from_params(restored_params)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
             del restored_params
         else:

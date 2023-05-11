@@ -11,7 +11,7 @@ from flax.serialization import (
 from flax.traverse_util import flatten_dict, unflatten_dict, empty_node
 import msgpack
 
-from EasyLM.jax_utils import tree_apply, float_tensor_to_dtype
+from easylm.jax_utils import tree_apply, float_tensor_to_dtype
 
 
 class StreamingCheckpointer(object):
@@ -153,12 +153,12 @@ class StreamingCheckpointer(object):
                                    trainstate_shard_fns=None,
                                    disallow_trainstate=False):
         if trainstate_target is not None:
-            params_target = trainstate_target.params['params']
+            params_target = trainstate_target["params"]
         else:
             params_target = None
 
         if trainstate_shard_fns is not None:
-            params_shard_fns = trainstate_shard_fns.params['params']
+            params_shard_fns = trainstate_shard_fns['params']
         else:
             params_shard_fns = None
 

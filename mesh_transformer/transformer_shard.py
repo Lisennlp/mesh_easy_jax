@@ -16,7 +16,6 @@ from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, Relat
     TransformerLayerShardV1, TransformerLayerShardV2, Projection, EmbeddingShardV2
 from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
 from jax.experimental import PartitionSpec as P
-from mesh_transformer.llama_model import (LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule)
 
 
 class CausalTransformerShard(hk.Module):
