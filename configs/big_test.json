@@ -7,7 +7,7 @@
   "layers": 32,
   "d_model": 4096,
   "n_heads": 32,
-  "n_vocab": 72000,
+  "n_vocab": 32000,
   "norm": "rmsnorm",
   "pe": "rotary",
   "pe_rotary_dims": 64,

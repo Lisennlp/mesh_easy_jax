@@ -1032,7 +1032,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.train_ = pjit(self.train_step,
                           in_shardings=(train_state_partition, PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
-                          donate_argnums=(0, 1),
+                          donate_argnums=(0, ),
                                 )
 
         self.eval = pjit(self.eval_step,
@@ -1060,9 +1060,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.gen_length = 1
         _key = next_rng()
         if self.config.load_checkpoint:
+            print(f'start load pretrained weight!!!')
             _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns)
-            self.state = self.init_from_params(restored_params)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
+            self.state = self.init_from_params(restored_params)
             del restored_params
+            jax.lib.xla_bridge.get_backend().defragment()
+            print(f'load pretrained weight finished!!!')
         else:
             self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
         param_count = hk.data_structures.tree_size(self.state['params'])

@@ -9,7 +9,7 @@ import optax
 
 # import wandb
 from tqdm import tqdm
-
+import mlxu
 
 from mesh_transformer import util
 from mesh_transformer.checkpoint import read_ckpt, write_ckpt
@@ -22,7 +22,7 @@ from google.cloud import storage
 
 from mesh_transformer.util import clip_by_global_norm, additive_weight_decay, Timer  # XD
 from easylm.llama_model import (
-    LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
+    LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
 
 from easylm.jax_utils import (
@@ -32,21 +32,43 @@ from easylm.jax_utils import (
     make_shard_and_gather_fns, with_sharding_constraint
 )
 from easylm.checkpoint import StreamingCheckpointer
+from easylm.data import DatasetFactory
+
+
+FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
+    seed=42,
+    initialize_jax_distributed=False,
+    mesh_dim='1,-1,1',
+    total_steps=10000,
+    load_llama_config='',
+    update_llama_config='',
+    load_checkpoint='',
+    load_dataset_state='',
+    log_freq=50,
+    save_model_freq=0,
+    save_milestone_freq=0,
+    eval_steps=0,
+    tokenizer=LLaMAConfig.get_tokenizer_config(),
+    train_dataset=DatasetFactory.get_default_config(),
+    eval_dataset=DatasetFactory.get_default_config(),
+    # optimizer=OptimizerFactory.get_default_config(),
+    checkpointer=StreamingCheckpointer.get_default_config(),
+    llama=LLaMAConfig.get_default_config(),
+    logger=mlxu.WandBLogger.get_default_config(),
+    log_all_worker=False,
+)
+
+import os
+
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 
 
 def parse_args():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="""
-    To use, download the full checkpoint archive, extract and upload to a GCS bucket, and set that as --tune-model-path
-    Modify the config file:
-        - set `model_dir` to where the checkpoints should be written during training
-        - set `train_set`, `val_set` to index files for your data
-        - set `tpu_size` to 8 (if on a v3-8)
-        - set `warmup_steps`, `anneal_steps`, `lr`, `end_lr` to the lr schedule for your finetuning run
-        - the global step will reset to 0, keep that in mind when writing your lr schedule
-        - set `name` to specify the name of the Weights & Biases run
-        - set `wandb_project` to specify the Weights & Biases project to log to
-    To prepare data in the expected data format:
         - use the script `create_finetune_tfrecords.py` in this repo to create data in the expected format
         - upload the .tfrecords files to GCS
         - save their GCS paths to a index file under `data/`, see existing files for examples
@@ -57,6 +79,7 @@ def parse_args():
     parser.add_argument("--fresh-opt", default=False, action="store_true", help="Use a newly initialized optimizer, ignoring any optimizer state saved in the base checkpoint")
     parser.add_argument("--jax_method", type=str, default=None, help="Config file location")
     parser.add_argument("--opt_type", type=str, default=None, help="Config file location")
+    parser.add_argument("--data_type", type=str, default=None, help="Config file location")
 
     args = parser.parse_args()
     return args
@@ -121,11 +144,18 @@ def save(network, step, bucket, path, mp, aux=None, keep_n=3, delete_old=True):
 
 
 def train_step(network, data):
-    data = data['input_ids']  # XD
-    inputs = {
-        "obs": data[:, :, :-1],
-        "target": data[:, :, 1:],
-    }
+    if 'input_ids' not in data:
+        inputs = {
+            "obs": data['input_tokens'],
+            "target": data['target_tokens'],
+        }
+    else:
+        data = data['input_ids']  # XD
+        inputs = {
+            "obs": data[:, :, :-1],
+            "target": data[:, :, 1:],
+        }
+
     loss, last_loss = network.train(inputs)  # XD: remove , grad_norm, grad_norm_micro
 
     return (
@@ -137,13 +167,14 @@ def train_step(network, data):
 
 
 def eval_step(network, data):
+    data = data['input_ids']  # XD
     inputs = {
         "obs": data[:, :-1],
         "target": data[:, 1:],
     }
 
     out = network.eval(inputs)
-    loss = out["loss"]
+    loss = out#["loss"]  # XDD
 
     return np.array(loss).mean()
 
@@ -153,25 +184,27 @@ if __name__ == "__main__":
     params = json.load(open(args.config))
 
     gradient_accumulation_steps = params.get("gradient_accumulation_steps", 1)
-    per_replica_batch = params.get("per_replica_batch")
-    cores_per_replica = params.get("cores_per_replica")
+    per_replica_batch = params["per_replica_batch"]
+    cores_per_replica = params["cores_per_replica"]
 
     assert cores_per_replica <= 8
 
-    bucket = params.get("bucket")
-    model_dir = params.get("model_dir")
+    bucket = params["bucket"]
+    model_dir = params["model_dir"]
     layers = params["layers"]
     d_model = params["d_model"]
     n_heads = params["n_heads"]
     n_vocab = params["n_vocab"]
     seq = params["seq"]
     norm = params["norm"]
+
     val_batches = params["val_batches"]
     val_every = params["val_every"]
     ckpt_every = params["ckpt_every"]
     keep_every = params["keep_every"]
     eval_tasks = params["eval_harness_tasks"]
     total_steps = params["total_steps"]
+
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
@@ -180,8 +213,34 @@ if __name__ == "__main__":
     lr = params["lr"]
     end_lr = params["end_lr"]
     weight_decay = params["weight_decay"]
-    intermediate_size = params['intermediate_size']
+   
+    # alpha parameter for the exponential moving averages used to compute B_simple
+    noise_scale_alpha = params.get("noise_scale_alpha", 0.01)
 
+#     scheduler = util.gpt3_schedule(warmup_steps, anneal_steps, lr, end_lr)
+    scheduler = util.gpt3_schedule(2000, 50000, 1.2e-4, 1.2e-5)
+    
+    eval_mode = False  # XD
+    if not eval_mode:  # XD
+#         opt = optax.chain(
+#             optax.scale(1 / gradient_accumulation_steps),
+#             clip_by_global_norm(1, use_psum=params.get('transformation', 'xmap') == 'xmap'),  # XD
+#             optax.scale_by_adam(),
+#             additive_weight_decay(weight_decay),
+#             optax.scale(-1),
+#             optax.scale_by_schedule(scheduler)
+#         )
+        
+        opt = optax.chain(
+            optax.scale(1 / 1),
+            optax.clip_by_global_norm(1.0),
+            optax.scale_by_adam(),
+            util.additive_weight_decay(0.1),
+            optax.scale(-1),
+            optax.scale_by_schedule(scheduler)
+        )
+        params["optimizer"] = opt
+        
     checkpoint_config = StreamingCheckpointer.get_default_config()
     checkpointer = StreamingCheckpointer(
         checkpoint_config, 'output/',
@@ -189,54 +248,19 @@ if __name__ == "__main__":
     )
     params['checkpointer'] = checkpointer
     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
-
-    # alpha parameter for the exponential moving averages used to compute B_simple
-    noise_scale_alpha = params.get("noise_scale_alpha", 0.01)
-
-    if args.opt_type == 'mesh':
-        scheduler = util.gpt3_schedule(warmup_steps, anneal_steps, lr, end_lr)
-        opt = optax.chain(
-            optax.scale(1 / 1),
-            clip_by_global_norm(1, use_psum=params.get('transformation', 'xmap') == 'xmap'),  # XD
-            optax.scale_by_adam(),
-            additive_weight_decay(weight_decay),
-            optax.scale(-1),
-            optax.scale_by_schedule(scheduler)
-        )
-    else:
-        learning_rate_schedule = optax.warmup_cosine_decay_schedule(
-                init_value=0.001,
-                peak_value=0.01,
-                warmup_steps=2000,
-                decay_steps=500000,
-                end_value=0.001,
-            )
-        opt = optax.chain(
-                    optax.clip_by_global_norm(1.0),
-                    optax.adafactor(
-                        learning_rate=learning_rate_schedule,
-                        multiply_by_parameter_scale=True,
-                        momentum=0.9,
-                        decay_rate=0.95,
-                        factored=False,
-                        clipping_threshold=None,
-                        dtype_momentum=jnp.bfloat16,
-                    ),
-                    # optax_add_scheduled_weight_decay(
-                    #     lambda step: -learning_rate_schedule(step) * config.weight_decay,
-                    #     weight_decay_mask
-                    # )
-                    )
-    params["optimizer"] = opt
     
+        
     llama_config = LLaMAConfig(**params)
     llama_config.vocab_file = '/home/lishengping/models/trans_7b/tokenizer.model'
     llama_config.num_hidden_layers = layers
-    llama_config.intermediate_size = intermediate_size
+    llama_config.intermediate_size = 11008
     llama_config.seed = 42
+#     llama_config.load_checkpoint = '/home/lishengping/models/llama_7b_streaming'
     for k, v in params.items():
         llama_config.k = v
     set_random_seed(llama_config.seed)
+    
+    
 
     start = time.time()
     tpu_size = jax.device_count()
@@ -249,6 +273,8 @@ if __name__ == "__main__":
     mesh_shape = (tpu_size // cores_per_replica, cores_per_replica)
     devices = np.array(jax.devices()).reshape(mesh_shape)
 
+    # pick initial ckpt - based on tuning vs train from scratch
+
     step = 0
     initial_ckpt_state_path = None
     train_loader = None
@@ -257,6 +283,25 @@ if __name__ == "__main__":
         print('`--tune_model_path` passed: we are beginning a fine-tuning run')
         fine_tuning = True
         initial_ckpt_state_path = args.tune_model_path
+    # else:  # XD
+    #     print('`--tune_model_path` not passed: we are continuing a fine-tuning run from a checkpoint (or we are not fine-tuning)')
+    #     fine_tuning = False
+    #     initial_ckpt_model_dir = model_dir
+    #     initial_ckpt_path = f"gs://{bucket}/{initial_ckpt_model_dir}"
+    #     meta_path = f"{initial_ckpt_path}/meta.json"
+
+    #     try:
+    #         with open(meta_path, "r") as f:
+    #             meta = json.load(f)
+    #         ckpt_step = meta["checkpoints"][-1]
+    #         initial_ckpt_state_path = f"{initial_ckpt_path}/step_{ckpt_step}/"
+    #         print(f"state will be restored from checkpoint {ckpt_step}")
+
+    #         step = ckpt_step
+    #         train_loader = meta['aux'][str(ckpt_step)].get("train_loader", None)
+    #     except NotFound:
+    #         # no checkpoint, start at zero
+    #         print(f"No checkpoint to load at {initial_ckpt_path}. Training from scratch.")
 
     if initial_ckpt_state_path:
         print(f"path to load checkpoint from: {initial_ckpt_state_path}")
@@ -265,12 +310,20 @@ if __name__ == "__main__":
 
     # set up datasets
     print("setting up datasets")
+
+    # train_dataset = TFRecordNewInputs(f"data/{params['train_set']}",
+    #                                   batch_size=(
+    #                                       gradient_accumulation_steps,
+    #                                       per_replica_batch * tpu_size // cores_per_replica),
+    #                                   sample_size=params['seq'],
+    #                                   restore_state=train_loader)
     # XD
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)
     train_dataset = load_tfrecord_dataset(f"data/{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     global_val_batch = per_replica_batch * tpu_size // cores_per_replica
+    if eval_mode: eval_dataset = load_tfrecord_dataset(f"data/{params['train_set']}", batch_size=(global_val_batch,), seq_len=params['seq'])  # XD
 
     val_sets = {}
 
@@ -280,10 +333,27 @@ if __name__ == "__main__":
         )
 
     # tok/sec metrics
-    sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
+    sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica) \
+        if not eval_mode else global_val_batch  # XD
+
     tokens_per_step = params['seq'] * sequences_per_step
 
-    # load + run
+    if args.data_type == 'json':
+#         tokenizer = LLaMAConfig.get_tokenizer({'vocab_file': llama_config.vocab_file})
+        tokenizer = LLaMATokenizer(
+            vocab_file=llama_config.vocab_file,
+            add_bos_token=False,
+            add_eos_token=False,
+            padding_side='left',
+            truncation_side='right',
+        )
+        data_dict = {'type': 'json', 
+                     'path': '/home/lishengping/data/trans_alpaca_data_cleaned.json',
+                     'fields_from_example': 'fields',
+                     'batch_size': 16,
+                     'seq_length': 2048}
+        train_dataset = DatasetFactory.load_dataset(data_dict, tokenizer)
+        
     with jax.experimental.maps.Mesh(devices, ('dp', 'mp')):  # XD: mesh -> Mesh
         with Timer("initializing network"):  # XD
             if args.jax_method == 'haiku':
@@ -303,32 +373,53 @@ if __name__ == "__main__":
             network.state = read_ckpt(network.state, initial_ckpt_state_path, devices.shape[1], load_opt=(not args.fresh_opt))
 
             if fine_tuning:
+                # overwrite the loaded scheduler step with zeros
+                # this makes fine-tuning use the lr schedule in
                 network.state["opt_state"][-1] = init_sched_state
 
             print(f"network loaded in {time.time() - start:.06}s")
 
-        print('compiling train fn')
-        start = time.time()
-        if args.jax_method == 'flax':
-            loss, last_loss = train_step(network, next(train_dataset))
+        if not eval_mode:  # XD
+            print('compiling train fn')
+            start = time.time()
+            if args.data_type == 'json':
+                for step_data in train_dataset:
+                    step_data = step_data[0]
+                    print(f'step_data: {step_data}')
+                    break
+            else:
+                step_data = next(train_dataset)
+            loss, last_loss = train_step(  # XD: remove , grad_norm, grad_norm_micro
+                # network, train_dataset.get_samples()  # XD
+                network, step_data
+            )
+            step += 1
+            print(f"Train fn compiled in {time.time() - start:.06}s")
         else:
-            loss, last_loss = train_step(network, next(train_dataset))
-            
-        step += 1
-        print(f"Train fn compiled in {time.time() - start:.06}s")
+            print('compiling eval fn')
+            start = time.time()
+            eval_step(network, next(eval_dataset))  # XD
+            # for val_set in val_sets.values():
+            #     eval_step(network, val_set.get_samples())
+            #     val_set.reset()
+            print(f"Eval fn compiled in {time.time() - start:.06}s")
 
+        # project = params.get("wandb_project", "mesh-transformer-jax")  # XD
+        # wandb.init(project=project, name=params["name"], config=params)
         wandb = None
 
         G_noise_avg = None
         S_noise_avg = None
 
-        while True:
+#         while True:
+        for step_data in train_dataset:
+            step_data = step_data[0]
             if (step > 1 and step % ckpt_every == 1) or step == total_steps:  # XD: add step > 1
                 print(f"saving a checkpoint for step {step}")
                 save(network, step, bucket, model_dir,
                      mp=cores_per_replica,
                     #  aux={"train_loader": train_dataset.get_state()},  # XD
-                     aux={"train_loader": next(train_dataset)},
+                     aux={"train_loader": step_data},
                      delete_old=True,
                      )
 
@@ -351,7 +442,13 @@ if __name__ == "__main__":
                 exit()
 
             start = time.time()
-            loss, last_loss = train_step(network, next(train_dataset))
+            if not eval_mode:  # XD
+                loss, last_loss = train_step(  # XD: remove , grad_norm, grad_norm_micro
+                    # network, train_dataset.get_samples()  # XD
+                    network, step_data
+                )
+            else:
+                loss, last_loss = eval_step(network, next(eval_dataset)), 0.  # XD
             step += 1
 
             steps_per_sec = 1 / (time.time() - start)
