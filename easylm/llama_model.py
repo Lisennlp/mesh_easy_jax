@@ -1185,6 +1185,7 @@ class LLaMATokenizer(PreTrainedTokenizer):
         sp_model_kwargs: Optional[Dict[str, Any]] = None,
         add_bos_token=False,
         add_eos_token=False,
+        add_tokens=0,
         **kwargs,
     ):
         self.sp_model_kwargs = {} if sp_model_kwargs is None else sp_model_kwargs
@@ -1207,11 +1208,14 @@ class LLaMATokenizer(PreTrainedTokenizer):
             eos_token=eos_token,
         ))
         self.pad_token_id = self.unk_token_id
+        if add_tokens:
+            self.added_tokens_encoder = {f'makeword{i}': 79458 + i for i in range(add_tokens)}
+        
 
     @property
     def vocab_size(self):
         """Returns vocab size"""
-        return self.sp_model.get_piece_size()
+        return self.sp_model.get_piece_size() + len(self.added_tokens_encoder)
 
     @property
     def bos_token_id(self) -> Optional[int]:

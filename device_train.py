@@ -247,11 +247,16 @@ if __name__ == "__main__":
         enable=jax.process_index() == 0,
     )
     params['checkpointer'] = checkpointer
-    params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
+#     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
+    params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
+    params['load_checkpoint'] = ''
+
     
         
     llama_config = LLaMAConfig(**params)
-    llama_config.vocab_file = '/home/lishengping/models/trans_7b/tokenizer.model'
+#     llama_config.vocab_file = '/home/lishengping/models/trans_7b/tokenizer.model'
+    llama_config.vocab_file = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
+    
     llama_config.num_hidden_layers = layers
     llama_config.intermediate_size = 11008
     llama_config.seed = 42
@@ -346,13 +351,17 @@ if __name__ == "__main__":
             add_eos_token=False,
             padding_side='left',
             truncation_side='right',
+            add_tokens=6,
         )
         data_dict = {'type': 'json', 
                      'path': '/home/lishengping/data/trans_alpaca_data_cleaned.json',
                      'fields_from_example': 'fields',
-                     'batch_size': 16,
+                     'batch_size': 1,
                      'seq_length': 2048}
         train_dataset = DatasetFactory.load_dataset(data_dict, tokenizer)
+    llama_config.vocab_size = tokenizer.vocab_size
+    
+    print(f'vocab_size: {llama_config.vocab_size}')
         
     with jax.experimental.maps.Mesh(devices, ('dp', 'mp')):  # XD: mesh -> Mesh
         with Timer("initializing network"):  # XD
