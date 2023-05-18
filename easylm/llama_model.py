@@ -926,12 +926,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        # self.transformer = remat.FlaxLLaMAModule(self.config, dtype=self.dtype)
-        self.transformer = remat(
-                FlaxLLaMAModule(self.config, dtype=self.dtype), 
+        # self.transformer = FlaxLLaMAModule(self.config, dtype=self.dtype)
+        t = remat(FlaxLLaMAModule, 
                 static_argnums=(3, 4, 5),
-                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
-            )
+                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+        self.transformer = t(self.config, dtype=self.dtype)
+        
         self.lm_head = nn.Dense(
             self.config.vocab_size,
             dtype=self.dtype,
