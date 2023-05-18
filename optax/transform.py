@@ -60,7 +60,7 @@ def trace(
 
   def init_fn(params):
     return TraceState(
-        trace=jax.tree_map(
+        trace=getattr(jax, 'tree_multimap', jax.tree_map)(
             lambda t: jnp.zeros_like(t, dtype=accumulator_dtype), params))
 
   def update_fn(updates, state, params=None):
@@ -77,14 +77,14 @@ def trace(
 
 def _update_moment(updates, moments, decay, order):
   """Compute the exponential moving average of the `order-th` moment."""
-  return getattr(jax, 'tree_multimap', jax.tree_map)(  # XD
+  return getattr(jax, 'tree_multimap', jax.tree_map)(
       lambda g, t: (1 - decay) * (g ** order) + decay * t, updates, moments)
 
 
 def _bias_correction(moment, decay, count):
   """Perform bias correction. This becomes a no-op as count goes to infinity."""
   bias_correction = 1 - decay**count
-  return jax.tree_map(lambda t: t / bias_correction.astype(t.dtype), moment)
+  return getattr(jax, 'tree_multimap', jax.tree_map)(lambda t: t / bias_correction.astype(t.dtype), moment)
 
 
 class EmaState(base.OptState):
@@ -119,7 +119,7 @@ def ema(
   def init_fn(params):
     return EmaState(
         count=jnp.zeros([], jnp.int32),
-        ema=jax.tree_map(
+        ema=getattr(jax, 'tree_multimap', jax.tree_map)(
             lambda t: jnp.zeros_like(t, dtype=accumulator_dtype), params))
 
   def update_fn(updates, state, params=None):
@@ -158,7 +158,7 @@ def scale_by_rss(
   """
 
   def init_fn(params):
-    sum_of_squares = jax.tree_map(
+    sum_of_squares = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda t: jnp.full_like(t, initial_accumulator_value), params)
     return ScaleByRssState(sum_of_squares=sum_of_squares)
 
@@ -166,7 +166,7 @@ def scale_by_rss(
     del params
     sum_of_squares = jax.tree_multimap(
         lambda g, t: jnp.square(g) + t, updates, state.sum_of_squares)
-    inv_sqrt_g_square = jax.tree_map(
+    inv_sqrt_g_square = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda t: jnp.where(t > 0, jax.lax.rsqrt(t + eps), 0.0), sum_of_squares)
     updates = jax.tree_multimap(
         lambda scale, g: scale * g, inv_sqrt_g_square, updates)
@@ -200,7 +200,7 @@ def scale_by_rms(
   """
 
   def init_fn(params):
-    nu = jax.tree_map(
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda n: jnp.full_like(n, initial_scale), params)  # second moment
     return ScaleByRmsState(nu=nu)
 
@@ -240,8 +240,8 @@ def scale_by_stddev(
   """
 
   def init_fn(params):
-    mu = jax.tree_map(jnp.zeros_like, params)  # First moment
-    nu = jax.tree_map(
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # First moment
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda n: jnp.full_like(n, initial_scale), params)  # second moment
     return ScaleByRStdDevState(mu=mu, nu=nu)
 
@@ -287,8 +287,8 @@ def scale_by_adam(
   """
 
   def init_fn(params):
-    mu = jax.tree_map(jnp.zeros_like, params)  # First moment
-    nu = jax.tree_map(jnp.zeros_like, params)  # Second moment
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # First moment
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # Second moment
     return ScaleByAdamState(count=jnp.zeros([], jnp.int32), mu=mu, nu=nu)
 
   def update_fn(updates, state, params=None):
@@ -298,7 +298,7 @@ def scale_by_adam(
     count_inc = numerics.safe_int32_increment(state.count)
     mu_hat = _bias_correction(mu, b1, count_inc)
     nu_hat = _bias_correction(nu, b2, count_inc)
-    updates = getattr(jax, 'tree_multimap', jax.tree_map)(  # XD
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda m, v: m / (jnp.sqrt(v + eps_root) + eps), mu_hat, nu_hat)
     return updates, ScaleByAdamState(count=count_inc, mu=mu, nu=nu)
 
@@ -325,7 +325,7 @@ def scale(
 
   def update_fn(updates, state, params=None):
     del params
-    updates = jax.tree_map(lambda g: step_size * g, updates)
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(lambda g: step_size * g, updates)
     return updates, state
 
   return base.GradientTransformation(init_fn, update_fn)
@@ -381,7 +381,7 @@ def scale_by_param_block_rms(
   def update_fn(updates, state, params):
     if params is None:
       raise ValueError(base.NO_PARAMS_MSG)
-    updates = jax.tree_map(
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda u, p: u * numerics.safe_root_mean_squares(p, min_scale),
         updates, params)
     return updates, state
@@ -419,8 +419,8 @@ def scale_by_belief(
   """
 
   def init_fn(params):
-    mu = jax.tree_map(jnp.zeros_like, params)  # First moment
-    s = jax.tree_map(jnp.zeros_like, params)  # Second Central moment
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # First moment
+    s = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # Second Central moment
     return ScaleByBeliefState(count=jnp.zeros([], jnp.int32), mu=mu, nu=s)
 
   def update_fn(updates, state, params=None):
@@ -465,8 +465,8 @@ def scale_by_yogi(
 
   def init_fn(params):
     value_like = lambda p: jnp.full_like(p, initial_accumulator_value)
-    mu = jax.tree_map(value_like, params)  # First moment
-    nu = jax.tree_map(value_like, params)  # Second Central moment
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(value_like, params)  # First moment
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(value_like, params)  # Second Central moment
     return ScaleByAdamState(count=jnp.zeros([], jnp.int32), mu=mu, nu=nu)
 
   def update_fn(updates, state, params=None):
@@ -520,8 +520,8 @@ def scale_by_radam(
     return updates
 
   def init_fn(params):
-    mu = jax.tree_map(jnp.zeros_like, params)  # First moment
-    nu = jax.tree_map(jnp.zeros_like, params)  # Second moment
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # First moment
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)  # Second moment
     return ScaleByAdamState(count=jnp.zeros([], jnp.int32), mu=mu, nu=nu)
 
   def update_fn(updates, state, params=None):
@@ -603,7 +603,7 @@ def scale_by_schedule(
   def update_fn(updates, state, params=None):
     del params
     step_size = step_size_fn(state.count)
-    updates = jax.tree_map(
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda g: jnp.array(step_size, dtype=g.dtype) * g, updates)
     return updates, ScaleByScheduleState(
         count=numerics.safe_int32_increment(state.count))
@@ -739,7 +739,7 @@ def apply_every(
   """
 
   def init_fn(params):
-    grad_acc = jax.tree_map(jnp.zeros_like, params)
+    grad_acc = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)
     return ApplyEvery(count=jnp.zeros([], jnp.int32), grad_acc=grad_acc)
 
   def update_fn(updates, state, params=None):
@@ -749,7 +749,7 @@ def apply_every(
     grad_acc = jax.tree_multimap(
         lambda g, ga: acc * ga + g, updates, state.grad_acc)
     emit = c == (k - 1)
-    updates = jax.tree_map(lambda ga: emit * ga, grad_acc)
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(lambda ga: emit * ga, grad_acc)
     count_inc = numerics.safe_int32_increment(state.count)
     return updates, ApplyEvery(count=count_inc % k, grad_acc=grad_acc)
 
@@ -781,7 +781,7 @@ def centralize() -> base.GradientTransformation:
 
   def update_fn(updates, state, params=None):
     del params
-    updates = jax.tree_map(_subtract_mean, updates)
+    updates = getattr(jax, 'tree_multimap', jax.tree_map)(_subtract_mean, updates)
     return updates, state
 
   return base.GradientTransformation(init_fn, update_fn)
@@ -816,8 +816,8 @@ def scale_by_sm3(
     return [jnp.zeros([s]) for s in p.shape]
 
   def init_fn(params):
-    mu = jax.tree_map(zeros_for_dim, params)
-    nu = jax.tree_map(jnp.zeros_like, params)
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(zeros_for_dim, params)
+    nu = getattr(jax, 'tree_multimap', jax.tree_map)(jnp.zeros_like, params)
     return ScaleBySM3State(mu, nu)
 
   def _expanded_shape(shape, axis):
@@ -849,11 +849,11 @@ def scale_by_sm3(
         [jnp.reshape(v[i], _expanded_shape(g.shape, i)) for i in range(g.ndim)],
         updates, state.mu)
     accum = jax.tree_multimap(_new_accum, updates, mu)
-    accum_inv_sqrt = jax.tree_map(
+    accum_inv_sqrt = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda t: jnp.where(t > 0, jax.lax.rsqrt(t + eps), 0.0), accum)
     up = jax.tree_multimap(lambda g, a: g*a, updates, accum_inv_sqrt)
     nu = _update_moment(up, state.nu, b1, 1)
-    mu = jax.tree_map(
+    mu = getattr(jax, 'tree_multimap', jax.tree_map)(
         lambda g: [_new_mu(g, i) for i in range(g.ndim)], accum)
 
     return nu, ScaleBySM3State(mu=mu, nu=nu)
