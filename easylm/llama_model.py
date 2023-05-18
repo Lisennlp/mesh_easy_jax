@@ -936,16 +936,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
-    def train_step(self, train_state, batch):
+    def train_step(self, train_state, input_tokens, target_tokens):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
         batch = with_sharding_constraint(batch, PS('dp', None))
-        input_tokens = with_sharding_constraint(batch['obs'], PS('dp', None))
-        input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
     #     loss_masks = with_sharding_constraint(batch['targets'], PS('dp', None))
     #     loss_masks = loss_masks.reshape(-1, 1, loss_masks.shape[-1])
-        target_tokens = with_sharding_constraint(batch['target'], PS('dp', None))
-        target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
 
         def loss_and_accuracy(params, input_token, target_token):
@@ -1030,7 +1026,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     donate_argnums=(0, ),
                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS()),
+                          in_shardings=(train_state_partition, PS('dp'), PS('dp')),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
@@ -1072,7 +1068,10 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print(f"Total parameters: {param_count}")
         
     def train(self, sample):
-        loss, acc, self.state = self.train_(self.state, sample)
+        input_tokens, target_tokens = sample['obs'], sample['target']
+        input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
+        target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens)
         return loss.mean(), acc.mean()
 
     def __call__(

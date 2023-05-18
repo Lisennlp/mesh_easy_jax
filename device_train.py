@@ -368,7 +368,7 @@ if __name__ == "__main__":
             if args.jax_method == 'haiku':
                 network = CausalTransformer(params)
             elif args.jax_method == 'flax':
-                network = FlaxLLaMAForCausalLMModule(llama_config)
+                network = FlaxLLaMAForCausalLMModule(llama_config, dtype=jnp.bfloat16)
                 network.init_state()
 
         if initial_ckpt_state_path:

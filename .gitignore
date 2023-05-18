@@ -9,3 +9,4 @@ download
 *.swp
 *.ipynb
 __pycache__
+commit.sh
