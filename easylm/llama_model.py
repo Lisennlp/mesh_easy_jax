@@ -786,7 +786,7 @@ class FlaxLLaMABlockCollection(nn.Module):
     def setup(self):
         block = FlaxLLaMABlock
         if self.config.gradient_checkpointing != '':
-            FlaxLLaMACheckpointBlock = remat(
+            FlaxLLaMACheckpointBlock =remat (
                 block, static_argnums=(3, 4, 5),
                 policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
             )
@@ -926,7 +926,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        self.transformer = FlaxLLaMAModule(self.config, dtype=self.dtype)
+        # self.transformer = remat.FlaxLLaMAModule(self.config, dtype=self.dtype)
+        self.transformer = remat(
+                FlaxLLaMAModule(self.config, dtype=self.dtype), 
+                static_argnums=(3, 4, 5),
+                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
+            )
         self.lm_head = nn.Dense(
             self.config.vocab_size,
             dtype=self.dtype,
