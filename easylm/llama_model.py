@@ -939,7 +939,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def train_step(self, train_state, input_tokens, target_tokens):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
-        batch = with_sharding_constraint(batch, PS('dp', None))
     #     loss_masks = with_sharding_constraint(batch['targets'], PS('dp', None))
     #     loss_masks = loss_masks.reshape(-1, 1, loss_masks.shape[-1])
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
