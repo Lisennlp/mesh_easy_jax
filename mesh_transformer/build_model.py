@@ -24,19 +24,25 @@ def build_model(params, tpu_name, region, preemptible, version=1):
 
     assert tpu_size in [8, 32, 128, 256, 512]
 
-    create_tpu(tpu_name, region, f"v3-{tpu_size}", preemptible)
-    assert wait_til(tpu_name, region, {'state': 'READY', 'health': 'HEALTHY'})
+    # create_tpu(tpu_name, region, f"v3-{tpu_size}", preemptible)
+    # assert wait_til(tpu_name, region, {'state': 'READY', 'health': 'HEALTHY'})
+    tpu_name = 'llm-jax-v3-32'
+    region = 'us-east1-d'
 
     conns = get_connection(tpu_name, region)
-
+    head_host = conns[0].host
+    ports = [3333] * len(conns)
+    hosts = [None] + [head_host] * (len(conns) - 1)
+    conns = zip(conn, hosts, ports)
     assert len(conns) * 8 == tpu_size, "wrong size TPU for config"
 
-    head_info = ray.init(include_dashboard=False, object_store_memory=10**9)
-    address = head_info['redis_address']
+    # head_info = ray.init(include_dashboard=False, object_store_memory=10**9)
+    # address = head_info['redis_address']
 
     with multiprocessing.pool.ThreadPool(processes=len(conns)) as p:
         p.map(functools.partial(start_ray, address=address, version=version), conns)
 
+    ray.init()
     opt = optax.chain(
         optax.scale(1 / gradient_accumulation_steps),
         clip_by_global_norm(1, use_psum=(version == 1)),
