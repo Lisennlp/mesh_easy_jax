@@ -42,6 +42,11 @@ import optax
 from easylm.jax_utils import (
     with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
 )
+from easylm.checkpoint import StreamingCheckpointer
+
+
+checkpoint_config = StreamingCheckpointer.get_default_config()
+checkpointer = StreamingCheckpointer(checkpoint_config, 'output/')
 
 LLAMA_STANDARD_CONFIGS = {
     '3b': {
@@ -119,48 +124,34 @@ LLAMA_STANDARD_CONFIGS = {
 }
 
 
-class LLaMAConfig(PretrainedConfig):
-    r"""
-    This is the configuration class to store the configuration of a [`~LLaMAModel`]. It is used to instantiate an LLaMA
-    model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
-    defaults will yield a similar configuration to that of the LLaMA-7B.
-    Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PretrainedConfig`] for more information.
-    Args:
-        vocab_size (`int`, *optional*, defaults to 32000):
-            Vocabulary size of the LLaMA model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`~LLaMAModel`] or [`~TFLLaMAModel`].
-        hidden_size (`int`, *optional*, defaults to 4096):
-            Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 11008):
-            Dimension of the MLP representations.
-        num_hidden_layers (`int`, *optional*, defaults to 32):
-            Number of hidden layers in the Transformer encoder.
-        num_attention_heads (`int`, *optional*, defaults to 32):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
-            The non-linear activation function (function or string) in the decoder.
-        max_sequence_length (`int`, *optional*, defaults to 2048):
-            Max sequence length for model (for RoPE computation)
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-12):
-            The epsilon used by the rms normalization layers.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether or not the model should return the last key/values attentions (not used by all models). Only
-            relevant if `config.is_decoder=True`.
-        tie_word_embeddings(`bool`, *optional*, defaults to `False`):
-            Whether to tie weight embeddings
-        Example:
-    ```python
-    >>> from transformers import LLaMAModel, LLaMAConfig
-    >>> # Initializing a LLaMA llama-7b style configuration
-    >>> configuration = LLaMAConfig()
-    >>> # Initializing a model from the llama-7b style configuration
-    >>> model = LLaMAModel(configuration)
-    >>> # Accessing the model configuration
-    >>> configuration = model.config
-    ```"""
+class LLaMAConfig(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    @staticmethod
+    def get_partition_rules():
+        return (
+            # embeddings
+            ("transformer/wte/embedding", PS("mp", None)),
+            # atention
+            ("attention/(wq|wk|wv)/kernel", PS(None, "mp")),
+            ("attention/wo/kernel", PS("mp", None)),
+            # mlp
+            ("feed_forward/w1/kernel", PS(None, "mp")),
+            ("feed_forward/w2/kernel", PS("mp", None)),
+            ("feed_forward/w3/kernel", PS(None, "mp")),
+            # layer norms
+            ("attention_norm/kernel", PS(None)),
+            ("ffn_norm/kernel", PS(None)),
+            # output head
+            ("transformer/ln_f/kernel", PS(None)),
+            ("lm_head/kernel", PS(None, "mp")),
+            ('.*', PS(None)),
+        )
+
+
+class LLaMAConfig2(PretrainedConfig):
     model_type = "llama"
 
     def __init__(
@@ -951,7 +942,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         def loss_and_accuracy(params, input_token, target_token):
             logits = self.apply(
                 params, input_token, deterministic=False,
-                rngs=rng_generator(self.config.rng_keys()),
+                rngs=rng_generator(self.config.rng_keys),
             ).logits
             return cross_entropy_loss_and_accuracy(
                 logits, target_token)
@@ -987,7 +978,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         batch = with_sharding_constraint(batch, PS('dp', None))
         logits = self.apply(
             train_state['params'], batch['obs'], deterministic=True,
-            rngs=rng_generator(self.config.rng_keys()),
+            rngs=rng_generator(self.config.rng_keys),
         ).logits
         loss, accuracy = cross_entropy_loss_and_accuracy(
             logits, batch['target'],
@@ -1008,13 +999,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             input_ids=jnp.zeros((4, self.config.seq), dtype=jnp.int32),
             position_ids=jnp.zeros((4, self.config.seq), dtype=jnp.int32),
             attention_mask=jnp.ones((4, self.config.seq), dtype=jnp.int32),
-            rngs=rng_generator(self.config.rng_keys()),
+            rngs=rng_generator(self.config.rng_keys),
         )
         opt_state = self.optimizer.init(params)
         return {'params': params, 'opt_state': opt_state, 'step': 0}
     
         
     def init_state(self):
+        # lsp
+        self.config = LLaMAConfig(**self.config)
+        set_random_seed(self.config.seed)
         self.optimizer = self.config.optimizer
         train_state_shapes = jax.eval_shape(self.init_fn, next_rng())
         train_state_partition = match_partition_rules(
@@ -1030,7 +1024,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     donate_argnums=(0, ),
                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS('dp'), PS('dp')),
+                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp')),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
@@ -1051,8 +1045,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         mp_per_host = min(mp, 8)
         seq = self.config.seq
         vocab = self.config.vocab_size
+        print('init state============')
+        print(f'jax.host_count(): {jax.process_count()}')
 
-        example_shape = (max(dp // jax.host_count(), 1), seq,)
+        example_shape = (max(dp, 1), seq,)
+        print(f'example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
         head_print("in shape", x.shape)
         head_print("dp", dp)
@@ -1061,7 +1058,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         _key = next_rng()
         if self.config.load_checkpoint:
             print(f'start load pretrained weight!!!')
-            _, restored_params = self.config.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns)
+            _, restored_params = checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns)
             self.state = self.init_from_params(restored_params)
             del restored_params
             jax.lib.xla_bridge.get_backend().defragment()
@@ -1073,8 +1070,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         
     def train(self, sample):
         input_tokens, target_tokens = sample['obs'], sample['target']
-        input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
-        target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
+        # input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
+        # target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
         loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens)
         return loss.mean(), acc.mean()
 

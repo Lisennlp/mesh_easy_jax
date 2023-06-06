@@ -11,6 +11,7 @@ from mesh_transformer.train_actor import NetworkRunner
 from google.cloud import storage
 from smart_open import open
 from func_timeout import func_set_timeout
+import jax
 
 
 class TPUCluster:
@@ -27,22 +28,26 @@ class TPUCluster:
         self.version = version
 
         start = time.time()
-        # 将每个节点放到一个列表，并初始化参数，remote，通过此方法发起的函数调用都是以提交分布式任务的方式异步执行的，函数的返回值是一个对象id，使用ray.get内置操作可以同步获取该id对应的对象
+
         for i in range(node_count):
-            self.nodes.append(NetworkRunner.options(max_concurrency=2).remote(mesh_shape, model))
-        # 将每个节点模型运行run，阻塞，等待其他操作。
+            self.nodes.append(NetworkRunner.options(max_concurrency=2).remote(mesh_shape, model, version))
+        runs = []
         for n in self.nodes:
-            n.run.remote()
-        # 利用get_params获取参数
+            # 这里并不会执行run
+            runs.append(n.run.remote())
+        # 执行run函数
+        # 不能先执行run
+        # ray.get(runs)
         params = []
         for n in self.nodes:
             params.append(n.get_params.remote())
-
+        #lsp: 在执行ray.get的时候，才会去执行run
         self.param_count = ray.get(params)[0]
         print(f"Ray actors created in {time.time() - start:.06}s")
 
     @func_set_timeout(600)
     def train(self, data):
+        data = data['input_ids']
         data_chunks = np.array_split(data, len(self.nodes), axis=1)
 
         res = []

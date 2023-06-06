@@ -4,13 +4,16 @@ import numpy as np
 from queue import Queue
 
 from mesh_transformer.util import head_print
+from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
+from jax.experimental import PartitionSpec as P
 
 
 @ray.remote(resources={"tpu": 1})
 class NetworkRunner(object):
-    def __init__(self, mesh_shape, network_builder):
+    def __init__(self, mesh_shape, network_builder, version):
         self.mesh_shape = mesh_shape
         self.network_builder = network_builder
+        self.version = int(version)
 
         self.input_q = Queue(maxsize=1)
         self.output_q = Queue(maxsize=1)
@@ -37,15 +40,18 @@ class NetworkRunner(object):
         head_print(f"jax devices: {jax.device_count()}")
         head_print(f"jax runtime initialized in {time.time() - start:.06}s")
         devices = np.array(jax.devices()).reshape(self.mesh_shape)
-
-        with jax.experimental.maps.mesh(devices, ('dp', 'mp')):
+        mesh = jax.experimental.maps.Mesh(devices, ('dp', 'mp'))
+        with mesh:
             start = time.time()
+            # model init
             network = self.network_builder()
+            if self.version == 3:
+                network.init_state()
             head_print(f"Initialized in {time.time() - start:.06}s")
-
             while True:
                 operation, input = self.input_q.get()
                 if operation == "train":
+                    input = host_local_array_to_global_array(input, mesh, P(None, 'dp'))
                     self.output_q.put(network.train(input))
                 elif operation == "eval":
                     self.output_q.put(network.eval(input))

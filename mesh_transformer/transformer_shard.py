@@ -16,6 +16,7 @@ from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, Relat
     TransformerLayerShardV1, TransformerLayerShardV2, Projection, EmbeddingShardV2
 from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
 from jax.experimental import PartitionSpec as P
+from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
 
 
 class CausalTransformerShard(hk.Module):
@@ -123,7 +124,7 @@ def param_shapes_to_shard(param_shapes, parallel, config=None):  # XD
     params_shard = deepcopy(param_shapes)
     for name, d in params_shard.items():
         for k, shape_dtype in d.items():
-            print(f'name: {name}')
+ #           print(f'name: {name}')
             assert shape_dtype.ndim in [1, 2]
             if shape_dtype.ndim == 1:  # linear.bias, layernorm.weight/bias
                 d[k] = P(parallel) if name.endswith('/fc_in') else P(None)  # mlp_in bias is sharded
@@ -290,7 +291,7 @@ class CausalTransformer:
         elif self.transformation == 'pjit':  # XD: adapted from CausalTransformerV2.__init__
             x = jnp.zeros((1, 4)).astype(jnp.uint32).astype(jnp.uint32)  # batch, seq
             state_shapes = jax.eval_shape(init, jax.random.PRNGKey(42), x)
-            param_shard = param_shapes_to_shard(state_shapes['params'], parallel=('mp', 'dp'))
+            param_shard = param_shapes_to_shard(state_shapes['params'], parallel='mp')
 
             # ref get_opt_spec in run_clm_mp.py (xd/few-shot) and shard_strategy in CausalTransformerV2
             def get_state_shard(x):
@@ -327,7 +328,7 @@ class CausalTransformer:
         seq = config["seq"]
         vocab = config["n_vocab"]
 
-        example_shape = (max(dp // jax.host_count(), 1), seq,)
+        example_shape = (max(dp, 1), seq,)
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
 
         _key = jnp.array(key.take(mp_per_host)) if self.transformation == 'xmap' else next(key)  # XD
@@ -355,11 +356,15 @@ class CausalTransformer:
             target = jnp.transpose(sample["target"], (1, 0, 2))
 
         # loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_xmap(self.state, obs, target)
+
+        # obs = host_local_array_to_global_array(obs, self.mesh, P(None, 'dp'))
+        # target = host_local_array_to_global_array(target, self.mesh, P(None, 'dp'))
         loss, last_loss, self.state = self.train_(self.state, obs, target)  # XD
-        loss = np.array(loss)
-        last_loss = np.array(last_loss)
+       # loss = np.array(loss)
+       # last_loss = np.array(last_loss)
         # grad_norm = np.array(grad_norm)
-        return loss.mean(), last_loss.mean()#, grad_norm.mean(), grad_norm_micro.mean()
+        #return loss.mean(), last_loss.mean()#, grad_norm.mean(), grad_norm_micro.mean()
+        return loss, last_loss#, grad_norm.mean(), grad_norm_micro.mean()
 
     def eval(self, sample):
         # print("eval sample", sample["obs"].shape)
@@ -706,7 +711,7 @@ class CausalTransformerV2:  # XDC: do not have a seperate model class like Causa
         seq = config["seq"]
         vocab = config["n_vocab"]
 
-        example_shape = (max(dp // jax.host_count(), 1), seq,)
+        example_shape = (max(dp, 1), seq,)
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
 
         head_print("in shape", x.shape)

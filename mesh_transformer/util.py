@@ -3,36 +3,12 @@ import jax.numpy as jnp
 from jax.experimental.pjit import with_sharding_constraint
 from optax import AdditiveWeightDecayState, GradientTransformation, OptState
 
-# XD: from common_utils.py
-# adapted from: https://dzone.com/articles/python-timer-class-context
-# from timeit import default_timer
-from datetime import datetime
-
-class Timer(object):
-    def __init__(self, msg='', verbose=True):
-        self.verbose = verbose
-        # self.timer = default_timer
-        self.msg = msg
-        
-    def __enter__(self):
-        if self.verbose: print(self.msg, '...', end=' ')
-        self.start = datetime.now() # self.timer()
-        return self
-        
-    def __exit__(self, *args):
-        end = datetime.now() # self.timer()
-        self.elapsed = str(end - self.start)#.split('.')[0]
-        # self.elapsed_secs = end - self.start
-        # self.elapsed = self.elapsed_secs #* 1000   # millisecs
-        if self.verbose: print('done', self.elapsed)
-            # print('elapsed time: %d s' % self.elapsed)
 
 # same as with_sharding_constraint but doesn't fail if run outside of pjit/mesh context
 def maybe_shard(x, resource):
     try:
         return with_sharding_constraint(x, resource)
-    # except ValueError as e:
-    except Exception as e:  # XD
+    except ValueError as e:
         print(e)
         return x
 
@@ -56,9 +32,10 @@ def global_norm(updates, use_psum=True):
         pre_sqrt = jax.lax.psum(pre_sqrt, "shard")
     return jnp.sqrt(pre_sqrt)
 
-
-class ClipByGlobalNormState(OptState):
+import typing
+class ClipByGlobalNormState(typing.Type[OptState]):
     """The `clip_by_global_norm` transformation is stateless."""
+
 
 def clip_by_global_norm(max_norm, use_psum=True) -> GradientTransformation:
     """Clip updates using their global norm.
@@ -101,7 +78,7 @@ def additive_weight_decay(weight_decay: float = 0.0) -> GradientTransformation:
         return AdditiveWeightDecayState()
 
     def update_fn(updates, state, params):
-        updates = getattr(jax, 'tree_multimap', jax.tree_map)(lambda g, p: g + weight_decay * p * (len(g.shape) > 1), updates, params)  # XD
+        updates = getattr(jax, 'tree_multimap', jax.tree_map)(lambda g, p: g + weight_decay * p * (len(g.shape) > 1), updates, params)
         return updates, state
 
     return GradientTransformation(init_fn, update_fn)

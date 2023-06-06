@@ -3,15 +3,24 @@ import json
 import time
 
 import numpy as np
-import wandb
+# import wandb
 from tqdm import tqdm
 
 from mesh_transformer.build_model import build_model
 from lm_eval import evaluator, tasks
 from tasks.eval_harness import EvalHarnessAdaptor
-from tfrecord_loader import TFRecordNewInputs
+from tfrecord_loader import TFRecordNewInputs, load_tfrecord_dataset
 import multiprocessing
+import tensorflow as tf
 
+import jax
+
+from easylm.llama_model import (
+    LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
+)
+
+jax.config.update('jax_array', True)
+tf.config.experimental.set_visible_devices([], "GPU")
 
 def parse_args():
     # Parse command line arguments
@@ -75,7 +84,7 @@ if __name__ == "__main__":
     t = build_model(params, tpu_name, region, preemptible, version=args.version)
 
     try:
-        t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
+       # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
         step = 0
         train_load_restore = None
     except Exception as e:
@@ -86,21 +95,20 @@ if __name__ == "__main__":
         if train_load_restore is None:
             print("Failed to restore train loader state")
 
-    train_dataset = TFRecordNewInputs(f"data/{params['train_set']}",
-                                      batch_size=(
-                                          gradient_accumulation_steps,
-                                          per_replica_batch * tpu_size // cores_per_replica),
-                                      sample_size=params['seq'],
-                                      restore_state=train_load_restore)
+    train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
+    print('train_batch_size =', train_batch_size)
+    train_dataset = load_tfrecord_dataset(f"data/{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
+
+    sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
+    tokens_per_step = params['seq'] * sequences_per_step
 
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = TFRecordNewInputs(f"data/{v}",
-                                        batch_size=(global_val_batch,),
-                                        sample_size=seq)
+        
+        val_sets[k] = load_tfrecord_dataset(f"data/{v}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     adaptor = EvalHarnessAdaptor(t,
@@ -110,25 +118,25 @@ if __name__ == "__main__":
                                  min_seq=1024 if args.version == 2 else None)  # work around suboptimal pjit layout
 
     start = time.time()
-    t.train(train_dataset.get_samples())
+    t.train(next(train_dataset))
     print(f"Train fn compiled in {time.time() - start:.06}s")
 
     start = time.time()
     for val_set in val_sets.values():
-        t.eval(val_set.get_samples())
+        t.eval(next(val_set))
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
-    project = params.get("wandb_project", "mesh-transformer-jax")
-    wandb.init(project=project, entity="eleutherai", name=params["name"], config=params)
+    # project = params.get("wandb_project", "mesh-transformer-jax")
+    # wandb.init(project=project, entity="eleutherai", name=params["name"], config=params)
+    wandb = None
 
     eval_task_dict = tasks.get_task_dict(eval_tasks)
 
-    pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
+    # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
 
     while True:
-        loss, last_loss = t.train(train_dataset.get_samples())
-        wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
-
+        loss, last_loss = t.train(next(train_dataset))
+        # wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
                    aux={"train_loader": train_dataset.get_state()},
@@ -139,31 +147,45 @@ if __name__ == "__main__":
                 print("training completed!")
                 exit()
 
-        if step % val_every == 0:
-            for name, val_set in val_sets.items():
-                val_loss = []
-                for i, _ in tqdm(zip(val_set.sample_once(), range(val_batches)),
-                                 desc=f"validation for step {step}, set {name}",
-                                 total=val_batches):
-                    val_loss.append(t.eval(i))
-                val_loss = np.array(val_loss).mean()
-                print(f"validation loss for step {step}, set {name}: {val_loss}")
+        # if step % val_every == 0:
+        #     for name, val_set in val_sets.items():
+        #         val_loss = []
+        #         for i, _ in tqdm(zip(val_set.sample_once(), range(val_batches)),
+        #                          desc=f"validation for step {step}, set {name}",
+        #                          total=val_batches):
+        #             val_loss.append(t.eval(i))
+        #         val_loss = np.array(val_loss).mean()
+        #         print(f"validation loss for step {step}, set {name}: {val_loss}")
 
-                wandb.log({f'val/loss_{name}': float(val_loss)}, step)
+        #         wandb.log({f'val/loss_{name}': float(val_loss)}, step)
 
-            results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
+        #     results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
 
-            flat_results = {}
+        #     flat_results = {}
 
-            for task_name, task_res in results["results"].items():
-                version = results["versions"][task_name]
-                for metric_name, metric_res in task_res.items():
-                    flat_results[f"{task_name}-v{version}/{metric_name}"] = float(metric_res)
+        #     for task_name, task_res in results["results"].items():
+        #         version = results["versions"][task_name]
+        #         for metric_name, metric_res in task_res.items():
+        #             flat_results[f"{task_name}-v{version}/{metric_name}"] = float(metric_res)
 
-            dumped = json.dumps(results, indent=2)
-            print(f"step {step} val results: {dumped}")
-            wandb.log(flat_results, step)
+        #     dumped = json.dumps(results, indent=2)
+        #     print(f"step {step} val results: {dumped}")
+        #     wandb.log(flat_results, step)
         step += 1
 
-        pbar.set_postfix({'loss': loss, 'last_loss': last_loss})
-        pbar.update()
+        steps_per_sec = step / (time.time() - start)
+        tokens_per_sec = tokens_per_step * steps_per_sec
+        sequences_processed = sequences_per_step * step
+        tokens_processed = tokens_per_step * step
+
+        wandb_stats = {
+                "train/loss": loss,
+                "train/last_loss": last_loss,
+                "train/steps_per_sec": steps_per_sec,
+                "train/tokens_per_sec": tokens_per_sec,
+                "sequences_processed": sequences_processed,
+                "tokens_processed": tokens_processed,
+            }
+        print(wandb_stats)
+        # pbar.set_postfix({'loss': loss, 'last_loss': last_loss})
+        # pbar.update()
