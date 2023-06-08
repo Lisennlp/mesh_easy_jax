@@ -931,7 +931,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
-    def train_step(self, train_state, input_tokens, target_tokens, masks=None):
+    def train_step(self, train_state, input_tokens, target_tokens, masks):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
@@ -941,7 +941,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             print(f'masks: None')
 
         def loss_and_accuracy(params, input_token, target_token, mask=None):
-            # deterministic=False的时候有Dropout，否则无
+            # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
                 params, input_token, deterministic=False,
                 rngs=rng_generator(self.config.rng_keys),
@@ -971,23 +971,46 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             "step": train_state["step"] + 1,
             "opt_state": new_opt_state
         }
-
-      
-    def eval_step(self, train_state, input_tokens, target_tokens, masks=None):
+    
+    def eval_step(self, train_state, input_tokens, target_tokens, masks):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
+        print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
+        if masks is not None:
+            print(f'masks: {masks.shape}')
+        else:
+            print(f'masks: None')
+        def loss_and_accuracy(params, input_token, target_token, mask=None):
+            # deterministic=False的时候有Dropout，否则无 
+            logits = self.apply(
+                params, input_token, deterministic=True,
+                rngs=rng_generator(self.config.rng_keys),
+            ).logits
+            return cross_entropy_loss_and_accuracy(
+                logits, target_token, valid=mask)
+
         if len(input_tokens.shape) == 3:
-            input_tokens = input_tokens.reshape(-1, input_tokens.shape[-1])
-            target_tokens = target_tokens.reshape(-1, input_tokens.shape[-1])
-            masks = masks.reshape(-1, input_tokens.shape[-1])
-        logits = self.apply(
-            train_state['params'], input_tokens, deterministic=True,
-            rngs=rng_generator(self.config.rng_keys),
-        ).logits
-        loss, accuracy = cross_entropy_loss_and_accuracy(
-            logits, target_tokens, valid=masks
-        )
-        return loss, accuracy
+            input_token = input_tokens.reshape(-1, input_tokens.shape[-1])
+            target_token = target_tokens.reshape(-1, target_tokens.shape[-1])
+            mask = masks.reshape(-1, masks.shape[-1])
+        loss, accuracy = loss_and_accuracy(params, input_token, target_token, mask=mask)
+        return to_f32(loss.mean()), to_f32(accuracy.mean()), train_state
+      
+    # def eval_step(self, train_state, input_tokens, target_tokens, masks=None):
+    #     rng = next_rng()
+    #     rng_generator = JaxRNG(rng)
+    #     if len(input_tokens.shape) == 3:
+    #         input_tokens = input_tokens.reshape(-1, input_tokens.shape[-1])
+    #         target_tokens = target_tokens.reshape(-1, input_tokens.shape[-1])
+    #         masks = masks.reshape(-1, input_tokens.shape[-1])
+    #     logits = self.apply(
+    #         train_state['params'], input_tokens, deterministic=True,
+    #         rngs=rng_generator(self.config.rng_keys),
+    #     ).logits
+    #     loss, accuracy = cross_entropy_loss_and_accuracy(
+    #         logits, target_tokens, valid=masks
+    #     )
+    #     return loss, accuracy
 
     def init_from_params(self, params):
         opt_state = self.optimizer.init(params)
@@ -1028,12 +1051,17 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
-
         self.eval_ = pjit(self.eval_step,
-                        in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
-                        out_shardings=(PS(), PS()),
-                        donate_argnums=(0,),
-    )
+                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+                          out_shardings=(PS(), PS(), train_state_partition),
+                          donate_argnums=(0, ),
+                                )
+
+    #     self.eval_ = pjit(self.eval_step,
+    #                     in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+    #                     out_shardings=(PS(), PS()),
+    #                     donate_argnums=(0,),
+    # )
         # 保存的是每个参数怎么进行shard和gather的函数
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
@@ -1073,12 +1101,14 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         
-    def train(self, sample, mode='train'):
+    def train(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
-        if mode == 'train':
-            loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
-        elif mode == 'eval':
-            loss, acc = self.eval_(self.state, input_tokens, target_tokens, masks)
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
+        return loss, acc
+    
+    def eval(self, sample):
+        input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
         return loss, acc
 
     def write_ckpt(self, path=None, shard=None):

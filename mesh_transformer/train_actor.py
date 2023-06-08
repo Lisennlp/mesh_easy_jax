@@ -50,9 +50,12 @@ class NetworkRunner(object):
             head_print(f"Initialized in {time.time() - start:.06}s")
             while True:
                 operation, input = self.input_q.get()
-                if operation in ["train", "eval"]:
+                if operation == "train":
                     input = host_local_array_to_global_array(input, mesh, P(None, 'dp'))
-                    self.output_q.put(network.train(input, mode=operation))
+                    self.output_q.put(network.train(input))
+                elif operation == "eval":
+                    input = host_local_array_to_global_array(input, mesh, P(None, 'dp'))
+                    self.output_q.put(network.eval(input))
                 elif operation == "generate":
                     self.output_q.put(network.generate(*input))
                 elif operation == "write_ckpt":

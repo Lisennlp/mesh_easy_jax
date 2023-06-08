@@ -149,16 +149,18 @@ if __name__ == "__main__":
                 print("Training completed!")
                 exit()
 
-        if (step+1) % val_every == 0:
+        if step % val_every == 0:
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
                 val_loss, val_acc = [], []
+                val_start = time.time()
                 while True:
                     if len(val_loss) % 100 == 0:
                         print(f'{val_name}-{len(val_loss)}-loss: {np.array(val_loss).mean()}')
                     try:
                         loss, acc = t.eval(next(val_set))
                     except:
+                        print(f'Eval ‘{val_name}’ finished...... take time: {time.time() - val_start}s')
                         break
                     val_loss.append(loss)
                     val_acc.append(acc)
