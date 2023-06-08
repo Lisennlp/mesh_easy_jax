@@ -47,10 +47,10 @@ class TPUCluster:
 
     @func_set_timeout(600)
     def train(self, data, mode='train'):
-        data = data['input_ids']
-        masks = data['labels']
-
-        data_chunks = np.array_split(data, len(self.nodes), axis=1)
+        # print(f'data: {data}')
+        masks = data['labels'] > 0
+        input_ids = data['input_ids']
+        data_chunks = np.array_split(input_ids, len(self.nodes), axis=1)
         mask_chunks = np.array_split(masks, len(self.nodes), axis=1)
 
         res = []

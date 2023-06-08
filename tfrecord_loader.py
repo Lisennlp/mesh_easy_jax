@@ -114,8 +114,10 @@ def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None):
     # train_batch_size = (gradient_accumulation_steps, train_mbs_per_replica * dp_size)
     # seq_len = 80  # max(len(s) for s in sequences) == 78
     # ds = ds.apply(tf.data.experimental.dense_to_ragged_batch(np.prod(self.bs), drop_remainder=True)) # mtj
-    ds = ds.padded_batch(batch_size=np.prod(batch_size), padded_shapes={'input_ids': [seq_len]},
-                        padding_values={'input_ids': 0}, drop_remainder=True)
+    ds = ds.padded_batch(batch_size=np.prod(batch_size), 
+                        padded_shapes={'input_ids': [seq_len], 'labels': [seq_len]},
+                        padding_values={'input_ids': 0, 'labels': 0}, 
+                        drop_remainder=True)
     ds = ds.prefetch(10)  # mesh-transformer-jax
     # ds = ds.repeat()  # gpt-neo/inputs.py
     # map shard directly over ds won't work, getting AttributeError: 'Tensor' object has no attribute 'numpy'
