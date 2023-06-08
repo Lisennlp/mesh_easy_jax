@@ -74,64 +74,20 @@ class TPUCluster:
 
     @func_set_timeout(600)
     def eval(self, data):
-        if isinstance(data, dict):
-            data_chunked = [{} for _ in self.nodes]
-            for k, v in data.items():
-                v_chunks = np.array_split(v, len(self.nodes), axis=0)
-                for idx, v_chunk in enumerate(v_chunks):
-                    data_chunked[idx][k] = v_chunk
+        data = data['input_ids']
+        masks = data['labels']
 
-            res = []
-            for n, d in zip(self.nodes, data_chunked):
-                res.append(n.eval.remote(d))
+        data_chunks = np.array_split(data, len(self.nodes), axis=1)
+        mask_chunks = np.array_split(masks, len(self.nodes), axis=1)
 
-            total = 0
-            correct = 0
-            last_correct = 0
-
-            total_last_loss = 0
-            mask_loss = []
-            each_correct = []
-
-            for input, output in zip(data_chunked, ray.get(res)):
-                correct_and_valid = np.logical_and(output["correct"], input["eval_mask"])
-
-                correct_tokens_count = np.sum(correct_and_valid, -1)
-                valid_tokens_count = np.sum(input["eval_mask"], -1)
-
-                correct_example = np.logical_and(valid_tokens_count == correct_tokens_count, valid_tokens_count > 0)
-                valid_example = valid_tokens_count > 0
-                last_correct_example = correct_and_valid[:, -1]
-
-                each_correct += correct_example.tolist()
-
-                total += sum(valid_example)
-                correct += sum(correct_example)
-                last_correct += sum(last_correct_example)
-                total_last_loss += sum(valid_example * output["last_loss"])
-
-                valid_loss = np.sum(output["all_loss"] * input["eval_mask"], -1)
-                mask_loss += valid_loss.tolist()
-
-            return {
-                "total": total,
-                "correct": correct,
-                "last_correct": last_correct,
-                "last_loss": total_last_loss,
-                "mask_loss": np.array(mask_loss),
-                "each_correct": np.array(each_correct)
-            }
-        else:
-            data_chunks = np.array_split(data, len(self.nodes), axis=0)
-
-            res = []
-            for n, d in zip(self.nodes, data_chunks):
-                res.append(n.eval.remote({
-                    "obs": d[:, :-1],
-                    "target": d[:, 1:],
-                }))
-
-            return np.array([i["loss"] for i in ray.get(res)]).mean()
+        res = []
+        for n, d, m in zip(self.nodes, data_chunks, mask_chunks):
+            res.append(n.eval.remote({
+                "obs": d[:, :, :-1],
+                "target": d[:, :, 1:],
+                "masks": m[:, :, :-1],
+            }))
+        return np.array([i["loss"] for i in ray.get(res)]).mean()
 
     @func_set_timeout(600)
     def generate(self, context, ctx_length, gen_len):

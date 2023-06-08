@@ -52,7 +52,7 @@ class StreamingCheckpointer(object):
         flattend_train_state = flatten_dict(train_state)
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
-        if path.startswith('gs'):
+        if not path.startswith('gs'):
             path = os.path.join('~/models/', path)
             print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
 

@@ -1059,18 +1059,19 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.gen_length = 1
         _key = next_rng()
 
-        checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.model.save_optimizer_state})
+        checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir)
 
         if self.config.load_checkpoint:
-            print(f'start load pretrained weight!!!')
+            print(f'Start load pretrained weight!!!')
             _, restored_params = self.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns['params'])
             self.state = self.init_from_params(restored_params)
             del restored_params
             jax.lib.xla_bridge.get_backend().defragment()
-            print(f'load pretrained weight finished!!!')
+            print(f'Load pretrained weight finished!!!')
         else:
+            print(f'Train model from scrath!!!')
             self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
