@@ -2,6 +2,7 @@ import argparse
 import json
 import time
 import os
+from collections import defaultdict
 
 import numpy as np
 # import wandb
@@ -109,7 +110,6 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        
         val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
@@ -131,9 +131,6 @@ if __name__ == "__main__":
     # project = params.get("wandb_project", "mesh-transformer-jax")
     # wandb.init(project=project, entity="eleutherai", name=params["name"], config=params)
     wandb = None
-
-    eval_task_dict = tasks.get_task_dict(eval_tasks)
-
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
 
     while True:
@@ -141,38 +138,37 @@ if __name__ == "__main__":
         # wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
-                   aux={"train_loader": train_dataset.get_state()},
+                   aux={"Train_loader": train_dataset.get_state()},
                    init=False,
                    delete_old=step % keep_every != 0)
 
             if step == total_steps:
-                print("training completed!")
+                print("Training completed!")
                 exit()
 
-        # if step % val_every == 0:
-        #     for name, val_set in val_sets.items():
-        #         val_loss = []
-        #         for i, _ in tqdm(zip(val_set.sample_once(), range(val_batches)),
-        #                          desc=f"validation for step {step}, set {name}",
-        #                          total=val_batches):
-        #             val_loss.append(t.eval(i))
-        #         val_loss = np.array(val_loss).mean()
-        #         print(f"validation loss for step {step}, set {name}: {val_loss}")
+        if step % val_every == 0:
+            eval_task_dict = defaultdict(dict)
+            for val_name, val_set in val_sets.items():
+                while True:
+                    loss, acc = t.train(next(val))
+                    val_loss.append(loss)
+                    val_acc.append(acc)
+                
+                val_loss = np.array(val_loss).mean()
+                val_acc = np.array(val_acc).mean()
 
-        #         wandb.log({f'val/loss_{name}': float(val_loss)}, step)
+                eval_task_dict[val_name]['loss'] = val_loss
+                eval_task_dict[val_name]['acc'] = val_acc
 
-        #     results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
+                print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
+                # wandb.log(f'{name} val loss: {float(val_loss)} acc: {float(val_acc)}', step)
 
-        #     flat_results = {}
+            results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
 
-        #     for task_name, task_res in results["results"].items():
-        #         version = results["versions"][task_name]
-        #         for metric_name, metric_res in task_res.items():
-        #             flat_results[f"{task_name}-v{version}/{metric_name}"] = float(metric_res)
-
-        #     dumped = json.dumps(results, indent=2)
-        #     print(f"step {step} val results: {dumped}")
-        #     wandb.log(flat_results, step)
+            flat_results = {}
+            dumped = json.dumps(results, indent=2)
+            print(f"Step {step} val results: {dumped}\n\n")
+            # wandb.log(flat_results, step)
         step += 1
 
         steps_per_sec = step / (time.time() - start)

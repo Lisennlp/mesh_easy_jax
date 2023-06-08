@@ -87,7 +87,8 @@ class TPUCluster:
                 "target": d[:, :, 1:],
                 "masks": m[:, :, :-1],
             }))
-        return np.array([i["loss"] for i in ray.get(res)]).mean()
+        return np.array([i["eval_loss"] for i in ray.get(res)]).mean(), np.array([i["eval_accuracy"] for i in ray.get(res)]).mean()
+
 
     @func_set_timeout(600)
     def generate(self, context, ctx_length, gen_len):
