@@ -88,7 +88,7 @@ class TFRecordNewInputs(TFRecordLoader):
 
 
 def _parse_function(example_proto): # https://zhuanlan.zhihu.com/p/552951305  # XD
-    feature_desc = {"input_ids": tf.io.VarLenFeature(tf.int64)}
+    feature_desc = {"input_ids": tf.io.VarLenFeature(tf.int64), "labels": tf.io.VarLenFeature(tf.int64)}
     example = tf.io.parse_single_example(example_proto, feature_desc)
     for name in list(example.keys()):
         t = example[name]

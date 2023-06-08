@@ -135,7 +135,7 @@ if __name__ == "__main__":
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
 
     while True:
-        loss, last_loss = t.train(next(train_dataset), mode='train')
+        loss, last_loss = t.train(next(train_dataset))
         # wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
                 while True:
-                    loss, acc = t.train(next(val), mode='eval')
+                    loss, acc = t.train(next(val))
                     val_loss.append(loss)
                     val_acc.append(acc)
                 
