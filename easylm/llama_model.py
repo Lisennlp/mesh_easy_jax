@@ -1073,7 +1073,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         # input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
         # target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
         loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens)
-        return loss.mean(), acc.mean()
+        return loss, acc
 
     def __call__(
         self,
