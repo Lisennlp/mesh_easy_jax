@@ -31,12 +31,11 @@ def parse_args():
     parser.add_argument("--tpu_region", type=str, help="Region of TPU to train on.")
     parser.add_argument("--preemptible", action="store_true")
 
-    parser.add_argument("--config", type=str, default=None, help="Config file location")
+    parser.add_argument("--config", type=str, default='configs/6B_roto_256_test.json', help="Config file location")
 
     parser.add_argument("--new", action="store_true", help="If set, deletes previous checkpoint, if it exists, and "
                                                            "starts a new training run")
-
-    parser.add_argument("--version", type=int, default=1, help="Choose which model version to use")
+    parser.add_argument("--version", type=int, default=3, help="Choose which model version to use, 1: pjit mesh-haiku-llama 2: xmap mesh-haiku-llama 3: pjit mesh-flax-llama")
 
     args = parser.parse_args()
     return args
@@ -47,7 +46,7 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
 
     args = parse_args()
-    params = json.load(open(args.config))
+    params = json.load(open(args.config, 'r'))
 
     if args.new:
         print(f"Starting experiment {params['name']} from scratch! "
@@ -85,17 +84,18 @@ if __name__ == "__main__":
 
     t = build_model(params, tpu_name, region, preemptible, version=args.version)
 
-    try:
-       # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
-        step = 0
-        train_load_restore = None
-    except Exception as e:
-        print(f"Save failed with error {e}, trying to load instead...", e)
-        step, aux = t.load(bucket, model_dir)
-        train_load_restore = aux.get("train_loader", None)
+    # try:
+    print(f'bucket： {bucket} model_dir: {model_dir}')
+    t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
+    step = 0
+    train_load_restore = None
+    # except Exception as e:
+    #     print(f"Save failed with error {e}, trying to load instead...", e)
+    #     step, aux = t.load(bucket, model_dir)
+    #     train_load_restore = aux.get("train_loader", None)
 
-        if train_load_restore is None:
-            print("Failed to restore train loader state")
+    #     if train_load_restore is None:
+    #         print("Failed to restore train loader state")
 
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)

@@ -77,8 +77,8 @@ def build_model(params, tpu_name, region, preemptible, version=1):
 def get_llama_params(params):
 #     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
     # params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
-    params['load_checkpoint'] = 'params::gs://llm_base_models/easylm/lama_trans_7b.stream'
-    # params['load_checkpoint'] = ''
+    # params['load_checkpoint'] = params.get('load_checkpoint', 'params::gs://llm_base_models/easylm/lama_trans_7b.stream')
+    params['load_checkpoint'] = ''
     # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
     params['num_hidden_layers'] = params.get('layers', 32)
     params['seed'] = params.get('seed', 42)
@@ -98,6 +98,8 @@ def get_llama_params(params):
     params['hidden_size'] = params.get('d_model', 4096)
     params['vocab_size'] = params.get('n_vocab', 32000)
     params['tie_word_embeddings'] = params.get('tie_word_embeddings', False)
+    params['save_optimizer_state'] = params.get('save_optimizer_state', True)
+
 
 #     llama_config.load_checkpoint = '/home/lishengping/models/llama_7b_streaming'
     return params

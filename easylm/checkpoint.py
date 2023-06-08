@@ -35,11 +35,11 @@ class StreamingCheckpointer(object):
         self.checkpoint_dir = checkpoint_dir
         self.enable = enable
 
-    def save_checkpoint(self, train_state, filename, gather_fns=None):
-        if self.enable:
-            path = os.path.join(self.checkpoint_dir, filename)
-        else:
-            path = '/dev/null'
+    def save_checkpoint(self, train_state, path, gather_fns=None):
+        # if self.enable:
+        #     path = os.path.join(self.checkpoint_dir, filename)
+        # else:
+        #     path = '/dev/null'
         self.save_train_state_to_file(
             train_state, path, gather_fns, self.config.float_dtype
         )
@@ -66,30 +66,34 @@ class StreamingCheckpointer(object):
             path = '/dev/null'
         mlxu.save_pickle(obj, path)
 
-    def save_all(self, train_state, gather_fns, metadata=None, dataset=None, milestone=False):
-        step = int(jax.device_get(train_state.step))
+    def save_all(self, train_state, gather_fns, metadata=None, dataset=None, milestone=False, model_dir=None):
+        # step = int(jax.device_get(train_state.step))
         if self.config.save_optimizer_state:
             checkpoint_state = train_state
             checkpoint_name = 'streaming_train_state'
             checkpoint_gather_fns = gather_fns
         else:
-            checkpoint_state = train_state.params['params']
+            checkpoint_state = train_state['params']
             checkpoint_name = 'streaming_params'
             checkpoint_gather_fns = gather_fns.params['params']
 
-        if milestone:
-            # Save a milestone checkpoint that will not be overwritten
-            self.save_pickle(metadata, f'metadata_{step}.pkl')
-            self.save_pickle(dataset, f'dataset_{step}.pkl')
-            self.save_checkpoint(
-                checkpoint_state, f'{checkpoint_name}_{step}', checkpoint_gather_fns
-            )
+        if model_dir is not None:
+            path = os.path.join(model_dir, checkpoint_name)
         else:
+            path = checkpoint_name
+        # if milestone:
+        #     # Save a milestone checkpoint that will not be overwritten
+        #     # self.save_pickle(metadata, f'metadata_{step}.pkl')
+        #     # self.save_pickle(dataset, f'dataset_{step}.pkl')
+        #     self.save_checkpoint(
+        #         checkpoint_state, f'{model_dir}_{step}', checkpoint_gather_fns
+        #     )
+        # else:
             # Save a normal checkpoint that can be overwritten
-            self.save_pickle(metadata, 'metadata.pkl')
-            self.save_pickle(dataset, 'dataset.pkl')
-            self.save_checkpoint(
-                checkpoint_state, f'{checkpoint_name}', checkpoint_gather_fns
+            # self.save_pickle(metadata, 'metadata.pkl')
+            # self.save_pickle(dataset, 'dataset.pkl')
+        self.save_checkpoint(
+                checkpoint_state, f'{path}', checkpoint_gather_fns
             )
 
     @staticmethod

@@ -209,6 +209,9 @@ class TPUCluster:
         elif self.version == 2:
             for node in self.nodes:
                 res.append(node.write_ckpt.remote(f"gs://{bucket}/{path}/step_{step}", 0))
+        if self.version == 3:
+            for shard_id, node in zip(range(self.mp), itertools.cycle(self.nodes)):
+                res.append(node.write_ckpt.remote(f"gs://{bucket}/{path}/step_{step}/", shard_id))
 
         ray.get(res)
         print(f"Wrote checkpoint in {time.time() - start:.06}s")
