@@ -931,14 +931,18 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
-    def train_step(self, train_state, input_tokens, target_tokens, mask=None):
+    def train_step(self, train_state, input_tokens, target_tokens, masks=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
     #     loss_masks = with_sharding_constraint(batch['targets'], PS('dp', None))
     #     loss_masks = loss_masks.reshape(-1, 1, loss_masks.shape[-1])
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
+        if masks is not None:
+            print(f'masks: {masks.shape}')
+        else:
+            print(f'masks: None')
 
-        def loss_and_accuracy(params, input_token, target_token):
+        def loss_and_accuracy(params, input_token, target_token, mask=None):
             logits = self.apply(
                 params, input_token, deterministic=False,
                 rngs=rng_generator(self.config.rng_keys),
@@ -956,11 +960,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         if input_tokens.shape[0] == 1:
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
-            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0])
+            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0], masks[0])
         else:
             grads, (loss, accuracy) = jax.lax.scan(microbatch, 
                                 jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),train_state['params']), 
-                                (input_tokens, target_tokens))
+                                (input_tokens, target_tokens, masks))
 
         updates, new_opt_state = self.optimizer.update(grads, train_state["opt_state"], train_state["params"])
 
@@ -971,7 +975,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         }
 
       
-    def eval_step(self, train_state, input_tokens, target_tokens, mask=None):
+    def eval_step(self, train_state, input_tokens, target_tokens, masks=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
 
@@ -980,7 +984,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             rngs=rng_generator(self.config.rng_keys),
         ).logits
         loss, accuracy = cross_entropy_loss_and_accuracy(
-            logits, target_tokens, valid=mask
+            logits, target_tokens, valid=masks
         )
         metrics = dict(
             eval_loss=loss,
@@ -1054,7 +1058,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("mp", mp)
         self.gen_length = 1
         _key = next_rng()
-        
+
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.model.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir)
@@ -1072,10 +1076,10 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print(f"Total parameters: {param_count}")
         
     def train(self, sample):
-        input_tokens, target_tokens, loss_mask = sample['obs'], sample['target'], sample['target']
+        input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
         # input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
         # target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, loss_mask)
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
         return loss, acc
 
     def write_ckpt(self, path=None, shard=None):

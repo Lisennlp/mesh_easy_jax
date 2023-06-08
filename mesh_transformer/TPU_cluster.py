@@ -58,7 +58,7 @@ class TPUCluster:
             res.append(n.train.remote({
                 "obs": d[:, :, :-1],
                 "target": d[:, :, 1:],
-                "mask": m[:, :, :-1],
+                "masks": m[:, :, :-1],
             }))
 
         res = ray.get(res)
