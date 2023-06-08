@@ -51,7 +51,7 @@ if __name__ == "__main__":
     if args.new:
         print(f"Starting experiment {params['name']} from scratch! "
               f"all data in gs://{params['bucket']}/{params['model_dir']}/ will be deleted")
-        input("Hit enter to continue")
+        # input("Hit enter to continue")
 
     tpu_name = args.tpu
     region = args.tpu_region

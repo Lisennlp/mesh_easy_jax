@@ -1033,9 +1033,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                         out_shardings=(PS()),
                         donate_argnums=(1,),
     )
-        self.shard_fns, self.gather_fns = make_shard_and_gather_fns(
-                                                              train_state_partition['params'], train_state_shapes['params']
-    )
+        self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
         key = hk.PRNGSequence(42)
         assert thread_resources.env.shape['mp'] == self.config.cores_per_replica
@@ -1063,7 +1061,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         if self.config.load_checkpoint:
             print(f'start load pretrained weight!!!')
-            _, restored_params = self.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns)
+            _, restored_params = self.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns['params'])
             self.state = self.init_from_params(restored_params)
             del restored_params
             jax.lib.xla_bridge.get_backend().defragment()
