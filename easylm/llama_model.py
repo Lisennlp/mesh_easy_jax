@@ -931,7 +931,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
-    def train_step(self, train_state, input_tokens, target_tokens):
+    def train_step(self, train_state, input_tokens, target_tokens, mask=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
     #     loss_masks = with_sharding_constraint(batch['targets'], PS('dp', None))
@@ -944,7 +944,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 rngs=rng_generator(self.config.rng_keys),
             ).logits
             return cross_entropy_loss_and_accuracy(
-                logits, target_token)
+                logits, target_token, valid=mask)
 
         def microbatch(old_grad, batch):
             input_token, target_token, = batch
@@ -971,16 +971,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         }
 
       
-    def eval_step(self, train_state, batch):
+    def eval_step(self, train_state, input_tokens, target_tokens, mask=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
-        batch = with_sharding_constraint(batch, PS('dp', None))
+
         logits = self.apply(
-            train_state['params'], batch['obs'], deterministic=True,
+            train_state['params'], input_token, deterministic=True,
             rngs=rng_generator(self.config.rng_keys),
         ).logits
         loss, accuracy = cross_entropy_loss_and_accuracy(
-            logits, batch['target'],
+            logits, target_tokens, valid=mask
         )
         metrics = dict(
             eval_loss=loss,
@@ -1023,16 +1023,17 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     donate_argnums=(0, ),
                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp')),
+                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
 
         self.eval = pjit(self.eval_step,
-                        in_shardings=(train_state_partition, PS()),
+                        in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
                         out_shardings=(PS()),
-                        donate_argnums=(1,),
+                        donate_argnums=(0,),
     )
+        # 保存的是每个参数怎么进行shard和gather的函数
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
         key = hk.PRNGSequence(42)
@@ -1053,9 +1054,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("mp", mp)
         self.gen_length = 1
         _key = next_rng()
-
-
-        checkpoint_config = StreamingCheckpointer.get_default_config()
+        
+        checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.model.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir)
 
@@ -1072,16 +1072,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print(f"Total parameters: {param_count}")
         
     def train(self, sample):
-        input_tokens, target_tokens = sample['obs'], sample['target']
+        input_tokens, target_tokens, loss_mask = sample['obs'], sample['target'], sample['target']
         # input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
         # target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens)
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, loss_mask)
         return loss, acc
 
     def write_ckpt(self, path=None, shard=None):
         start = time.time()
-        print(f'Start to save model')
-        self.checkpointer.save_all(self.state, self.gather_fns, path)
+        print(f'Start to save model: ‘{path}’')
+        self.checkpointer.save_all(self.state, self.gather_fns, model_dir=path)
         print(f'Model save finished. take time: {time.time() - start}')
 
     def __call__(

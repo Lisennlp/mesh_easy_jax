@@ -48,13 +48,17 @@ class TPUCluster:
     @func_set_timeout(600)
     def train(self, data):
         data = data['input_ids']
+        masks = data['labels']
+
         data_chunks = np.array_split(data, len(self.nodes), axis=1)
+        mask_chunks = np.array_split(masks, len(self.nodes), axis=1)
 
         res = []
-        for n, d in zip(self.nodes, data_chunks):
+        for n, d, m in zip(self.nodes, data_chunks, mask_chunks):
             res.append(n.train.remote({
                 "obs": d[:, :, :-1],
                 "target": d[:, :, 1:],
+                "mask": m[:, :, :-1],
             }))
 
         res = ray.get(res)
@@ -209,7 +213,7 @@ class TPUCluster:
         elif self.version == 2:
             for node in self.nodes:
                 res.append(node.write_ckpt.remote(f"gs://{bucket}/{path}/step_{step}", 0))
-        if self.version == 3:
+        elif self.version == 3:
             for shard_id, node in zip(range(self.mp), itertools.cycle(self.nodes)):
                 res.append(node.write_ckpt.remote(f"gs://{bucket}/{path}/step_{step}/", shard_id))
 

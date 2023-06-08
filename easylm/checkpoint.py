@@ -46,11 +46,15 @@ class StreamingCheckpointer(object):
 
     @staticmethod
     def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
+        print(f'Model save path: {path}')
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
+        if path.startswith('gs'):
+            path = os.path.join('~/models/', path)
+            print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
 
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
