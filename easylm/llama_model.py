@@ -943,6 +943,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             print(f'masks: None')
 
         def loss_and_accuracy(params, input_token, target_token, mask=None):
+            # deterministic=False的时候有Dropout，否则无
             logits = self.apply(
                 params, input_token, deterministic=False,
                 rngs=rng_generator(self.config.rng_keys),
@@ -968,7 +969,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         updates, new_opt_state = self.optimizer.update(grads, train_state["opt_state"], train_state["params"])
 
-        return to_f32(loss.mean()), to_f32(accuracy), { 
+        return to_f32(loss.mean()), to_f32(accuracy.mean()), { 
             "params": optax.apply_updates(train_state["params"], to_f32(updates)),
             "step": train_state["step"] + 1,
             "opt_state": new_opt_state
@@ -986,11 +987,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         loss, accuracy = cross_entropy_loss_and_accuracy(
             logits, target_tokens, valid=masks
         )
-        metrics = dict(
-            eval_loss=loss,
-            eval_accuracy=accuracy,
-        )
-        return metrics
+        return loss, accuracy
 
     def init_from_params(self, params):
         opt_state = self.optimizer.init(params)
@@ -1032,9 +1029,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                           donate_argnums=(0, ),
                                 )
 
-        self.eval = pjit(self.eval_step,
+        self.eval_ = pjit(self.eval_step,
                         in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
-                        out_shardings=(PS()),
+                        out_shardings=(PS(), PS()),
                         donate_argnums=(0,),
     )
         # 保存的是每个参数怎么进行shard和gather的函数
@@ -1076,11 +1073,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         
-    def train(self, sample):
+    def train(self, sample, mode='train'):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
-        # input_tokens = input_tokens.reshape(-1, 1, input_tokens.shape[-1])
-        # target_tokens = target_tokens.reshape(-1, 1, target_tokens.shape[-1])
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
+        if mode == 'train':
+            loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
+        elif mode == 'eval':
+            loss, acc = self.eval_(self.state, input_tokens, target_tokens, masks)
         return loss, acc
 
     def write_ckpt(self, path=None, shard=None):

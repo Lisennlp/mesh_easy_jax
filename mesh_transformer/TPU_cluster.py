@@ -46,7 +46,7 @@ class TPUCluster:
         print(f"Ray actors created in {time.time() - start:.06}s")
 
     @func_set_timeout(600)
-    def train(self, data):
+    def train(self, data, mode='train'):
         data = data['input_ids']
         masks = data['labels']
 
@@ -59,35 +59,45 @@ class TPUCluster:
                 "obs": d[:, :, :-1],
                 "target": d[:, :, 1:],
                 "masks": m[:, :, :-1],
-            }))
+            }, mode=mode))
 
         res = ray.get(res)
 
         loss = []
-        last_loss = []
+        acc = []
 
         for r in res:
             loss.append(r[0])
-            last_loss.append(r[1])
+            acc.append(r[1])
 
-        return np.array(loss).mean(), np.array(last_loss).mean()
+        return np.array(loss).mean(), np.array(acc).mean()
 
-    @func_set_timeout(600)
-    def eval(self, data):
-        data = data['input_ids']
-        masks = data['labels']
+    # @func_set_timeout(600)
+    # def eval(self, data):
+    #     data = data['input_ids']
+    #     masks = data['labels']
 
-        data_chunks = np.array_split(data, len(self.nodes), axis=1)
-        mask_chunks = np.array_split(masks, len(self.nodes), axis=1)
+    #     data_chunks = np.array_split(data, len(self.nodes), axis=1)
+    #     mask_chunks = np.array_split(masks, len(self.nodes), axis=1)
 
-        res = []
-        for n, d, m in zip(self.nodes, data_chunks, mask_chunks):
-            res.append(n.eval.remote({
-                "obs": d[:, :, :-1],
-                "target": d[:, :, 1:],
-                "masks": m[:, :, :-1],
-            }))
-        return np.array([i["eval_loss"] for i in ray.get(res)]).mean(), np.array([i["eval_accuracy"] for i in ray.get(res)]).mean()
+    #     res = []
+    #     for n, d, m in zip(self.nodes, data_chunks, mask_chunks):
+    #         res.append(n.train.remote({
+    #             "obs": d[:, :, :-1],
+    #             "target": d[:, :, 1:],
+    #             "masks": m[:, :, :-1],
+    #         }, mode='eval'))
+
+    #     res = ray.get(res)
+
+    #     loss = []
+    #     acc = []
+
+    #     for r in res:
+    #         loss.append(r[0])
+    #         acc.append(r[1])
+
+    #     return np.array(loss).mean(), np.array(acc).mean()
 
 
     @func_set_timeout(600)

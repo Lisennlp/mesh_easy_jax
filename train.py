@@ -87,7 +87,8 @@ if __name__ == "__main__":
 
     # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
-    t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
+    
+    # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
     step = 0
     train_load_restore = None
     # except Exception as e:
@@ -113,11 +114,11 @@ if __name__ == "__main__":
         val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
-    adaptor = EvalHarnessAdaptor(t,
-                                 seq,
-                                 global_val_batch,
-                                 shrink=pe != "fixed",
-                                 min_seq=1024 if args.version == 2 else None)  # work around suboptimal pjit layout
+    # adaptor = EvalHarnessAdaptor(t,
+    #                              seq,
+    #                              global_val_batch,
+    #                              shrink=pe != "fixed",
+    #                              min_seq=1024 if args.version == 2 else None)  # work around suboptimal pjit layout
 
     start = time.time()
     t.train(next(train_dataset))
@@ -134,7 +135,7 @@ if __name__ == "__main__":
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
 
     while True:
-        loss, last_loss = t.train(next(train_dataset))
+        loss, last_loss = t.train(next(train_dataset), mode='train')
         # wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
@@ -150,7 +151,7 @@ if __name__ == "__main__":
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
                 while True:
-                    loss, acc = t.train(next(val))
+                    loss, acc = t.train(next(val), mode='eval')
                     val_loss.append(loss)
                     val_acc.append(acc)
                 
@@ -163,10 +164,10 @@ if __name__ == "__main__":
                 print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
                 # wandb.log(f'{name} val loss: {float(val_loss)} acc: {float(val_acc)}', step)
 
-            results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
+            # results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
 
             flat_results = {}
-            dumped = json.dumps(results, indent=2)
+            dumped = json.dumps(eval_task_dict, indent=2)
             print(f"Step {step} val results: {dumped}\n\n")
             # wandb.log(flat_results, step)
         step += 1
