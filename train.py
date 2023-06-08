@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)
-    train_dataset = load_tfrecord_dataset(f"data/{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
+    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     for k, v in params['val_set'].items():
         
-        val_sets[k] = load_tfrecord_dataset(f"data/{v}", batch_size=train_batch_size, seq_len=params['seq'])
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     adaptor = EvalHarnessAdaptor(t,
