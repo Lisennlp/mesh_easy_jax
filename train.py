@@ -1,6 +1,7 @@
 import argparse
 import json
 import time
+import os
 
 import numpy as np
 # import wandb
@@ -21,6 +22,7 @@ from easylm.llama_model import (
 
 jax.config.update('jax_array', True)
 tf.config.experimental.set_visible_devices([], "GPU")
+os.environ['JAX_PLATFORMS'] = ''
 
 def parse_args():
     # Parse command line arguments
