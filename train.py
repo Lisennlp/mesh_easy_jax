@@ -24,6 +24,7 @@ from easylm.llama_model import (
 jax.config.update('jax_array', True)
 tf.config.experimental.set_visible_devices([], "GPU")
 os.environ['JAX_PLATFORMS'] = ''
+os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
 def parse_args():
     # Parse command line arguments
@@ -112,8 +113,10 @@ if __name__ == "__main__":
 
     val_sets = {}
 
-    for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+    # for k, v in params['val_set'].items():
+        # val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
+    val_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
@@ -127,8 +130,9 @@ if __name__ == "__main__":
     print(f"Train fn compiled in {time.time() - start:.06}s")
 
     start = time.time()
-    for val_set in val_sets.values():
-        t.eval(next(val_set))
+    # for val_set in val_sets.values():
+    #     t.train(next(val_set))
+    t.eval(next(val_dataset))
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
     # project = params.get("wandb_project", "mesh-transformer-jax")
