@@ -113,7 +113,7 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=eval_batch_size, seq_len=params['seq'])
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
@@ -152,8 +152,14 @@ if __name__ == "__main__":
         if (step+1) % val_every == 0:
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
+                val_loss, val_acc = [], []
                 while True:
-                    loss, acc = t.train(next(val))
+                    if len(val_loss) % 100 == 0:
+                        print(f'{val_name}-{len(val_loss)}-loss: {np.array(val_loss).mean()}')
+                    try:
+                        loss, acc = t.eval(next(val_set))
+                    except:
+                        break
                     val_loss.append(loss)
                     val_acc.append(acc)
                 
