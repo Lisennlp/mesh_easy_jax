@@ -934,8 +934,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def train_step(self, train_state, input_tokens, target_tokens, masks=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
-    #     loss_masks = with_sharding_constraint(batch['targets'], PS('dp', None))
-    #     loss_masks = loss_masks.reshape(-1, 1, loss_masks.shape[-1])
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
         if masks is not None:
             print(f'masks: {masks.shape}')
@@ -952,11 +950,10 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 logits, target_token, valid=mask)
 
         def microbatch(old_grad, batch):
-            input_token, target_token, = batch
+            input_token, target_token, mask= batch
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
-            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_token, target_token)
+            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_token, target_token, mask)
             new_grad = getattr(jax, 'tree_multimap', jax.tree_map)(lambda a, b: a + b, old_grad, grads)
-#             new_grad = jax.tree_map(lambda a, b: a + b, old_grad, grads)
             return  new_grad, (loss, accuracy)
 
         if input_tokens.shape[0] == 1:
@@ -979,9 +976,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def eval_step(self, train_state, input_tokens, target_tokens, masks=None):
         rng = next_rng()
         rng_generator = JaxRNG(rng)
-
+        if len(input_tokens.shape) == 3:
+            input_tokens = input_tokens.reshape(-1, input_tokens.shape[-1])
+            target_tokens = target_tokens.reshape(-1, input_tokens.shape[-1])
+            masks = masks.reshape(-1, input_tokens.shape[-1])
         logits = self.apply(
-            train_state['params'], input_token, deterministic=True,
+            train_state['params'], input_tokens, deterministic=True,
             rngs=rng_generator(self.config.rng_keys),
         ).logits
         loss, accuracy = cross_entropy_loss_and_accuracy(

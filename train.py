@@ -80,6 +80,8 @@ if __name__ == "__main__":
     eval_tasks = params["eval_harness_tasks"]
     total_steps = params["total_steps"]
 
+    eval_batch_size = 16
+
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
@@ -111,7 +113,7 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=train_batch_size, seq_len=params['seq'])
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=eval_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
@@ -147,7 +149,7 @@ if __name__ == "__main__":
                 print("Training completed!")
                 exit()
 
-        if step % val_every == 0:
+        if (step+1) % val_every == 0:
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
                 while True:
