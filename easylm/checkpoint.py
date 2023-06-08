@@ -49,8 +49,11 @@ class StreamingCheckpointer(object):
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
+        print(f'flattend_train_state: {flattend_train_state.keys()}')
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
+
+        print(f'gather_fns: {gather_fns.keys()}')
 
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
@@ -75,7 +78,7 @@ class StreamingCheckpointer(object):
         else:
             checkpoint_state = train_state['params']
             checkpoint_name = 'streaming_params'
-            checkpoint_gather_fns = gather_fns.params['params']
+            checkpoint_gather_fns = gather_fns['params']
 
         if model_dir is not None:
             path = os.path.join(model_dir, checkpoint_name)
