@@ -32,6 +32,8 @@
 
   "train_set": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
   "val_set": {
+    "test1": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
+    "test2": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords"
   },
 
   "eval_harness_tasks": [
