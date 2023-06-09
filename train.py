@@ -6,7 +6,7 @@ from collections import defaultdict
 from itertools import cycle
 
 import numpy as np
-# import wandb
+import wandb
 from tqdm import tqdm
 
 from mesh_transformer.build_model import build_model
@@ -21,15 +21,13 @@ import jax
 from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
-# 设置jax.Array和pjit适配，好像没什么用
+
 jax.config.update('jax_array', True)
-# 设置gpu不可见，好像没什么用
 tf.config.experimental.set_visible_devices([], "GPU")
-# 设置自动初始化tpu后端，当存在多个mesh时。
 os.environ['JAX_PLATFORMS'] = ''
-# 函数泄露问题，好像没什么用
 os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
+wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 def parse_args():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
@@ -57,6 +55,7 @@ if __name__ == "__main__":
     if args.new:
         print(f"Starting experiment {params['name']} from scratch! "
               f"all data in gs://{params['bucket']}/{params['model_dir']}/ will be deleted")
+        # input("Hit enter to continue")
 
     tpu_name = args.tpu
     region = args.tpu_region
@@ -89,9 +88,11 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
-    t, params = build_model(params, tpu_name, region, preemptible, version=args.version)
+    t = build_model(params, tpu_name, region, preemptible, version=args.version)
 
+    # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
+    # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
     step = 0
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)
@@ -106,9 +107,8 @@ if __name__ == "__main__":
 
     for k, v in params['val_set'].items():
         val_sets[k] = cycle(load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq']))
+    train_dataset = cycle(load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq']))
 
-    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
-    train_dataset = cycle(train_dataset)
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
     #                              seq,
@@ -123,18 +123,15 @@ if __name__ == "__main__":
     start = time.time()
     for val_set in val_sets.values():
         t.eval(next(val_set))
-        break
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
     project = params.get("wandb_project", "mesh-transformer-jax")
-    wandb.init(project=project, entity="caiyun", name=params["name"], config=params)
-    # wandb = None
-    # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
+    wandb.init(project=project, name=params["name"], config=params)
     while True:
         loss, acc = t.train(next(train_dataset))
-        if (step % ckpt_every == 0 and step) or step == total_steps:
+        if (step % ckpt_every == 0) or step == total_steps:
             t.save(step, bucket, model_dir,
-                   aux={"Train_loader": train_dataset.get_state()},
+                #    aux={"Train_loader": train_dataset.get_state()},
                    init=False,
                    delete_old=step % keep_every != 0)
 
@@ -145,40 +142,37 @@ if __name__ == "__main__":
         if step % val_every == 0:
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
-                print(f'Evaluating {val_name}......')
                 val_loss, val_acc = [], []
                 val_start = time.time()
                 for _ in range(val_batches):
                     loss, acc = t.eval(next(val_set))
                     val_loss.append(loss)
                     val_acc.append(acc)
-
+                
                 val_loss = np.array(val_loss).mean()
                 val_acc = np.array(val_acc).mean()
 
-                eval_task_dict[val_name]['loss'] = f'{val_loss:.4f}'
-                eval_task_dict[val_name]['acc'] = f'{val_loss:.4f}'
-            flat_results = {}
-            print(f"\nStep {step} eval datasets results:\n{eval_task_dict}\n")
-            print(f'Eval finished...... take time: {time.time() - val_start}s\n')
+                eval_task_dict[val_name]['loss'] = val_loss
+                eval_task_dict[val_name]['acc'] = val_acc
+
+                print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
+
+            print(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
+            wandb.log(eval_task_dict, step)
         step += 1
+
         steps_per_sec = step / (time.time() - start)
         tokens_per_sec = tokens_per_step * steps_per_sec
         sequences_processed = sequences_per_step * step
         tokens_processed = tokens_per_step * step
 
         wandb_stats = {
-                "step": step,
-                "train/loss": f'{loss:4f}',
-                "train/acc": f'{acc:4f}',
-                "train/steps_per_sec": f'{steps_per_sec:4f}',
-                "train/tokens_per_sec": f'{tokens_per_sec:4f}',
-                "sequences_processed": f'{sequences_processed:4f}',
-                "tokens_processed": f'{tokens_processed:4f}',
+                "train/loss": loss,
+                "train/acc": acc,
+                "train/steps_per_sec": steps_per_sec,
+                "train/tokens_per_sec": tokens_per_sec,
+                "sequences_processed": sequences_processed,
+                "tokens_processed": tokens_processed,
             }
-        print(wandb_stats)
-
+        print(f'step: {step}: {wandb_stats}')
         wandb.log(wandb_stats, step)
-        wandb.log(eval_task_dict, step)
-        # pbar.set_postfix({'loss': loss, 'last_loss': last_loss})
-        # pbar.update()
