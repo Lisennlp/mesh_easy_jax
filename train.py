@@ -3,7 +3,6 @@ import json
 import time
 import os
 from collections import defaultdict
-from itertools import cycle
 
 import numpy as np
 import wandb
@@ -106,8 +105,8 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = cycle(load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq']))
-    train_dataset = cycle(load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq']))
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
