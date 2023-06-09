@@ -157,8 +157,8 @@ if __name__ == "__main__":
                 val_loss = np.array(val_loss).mean()
                 val_acc = np.array(val_acc).mean()
 
-                eval_task_dict[val_name]['loss'] = val_loss
-                eval_task_dict[val_name]['acc'] = val_acc
+                eval_task_dict[val_name]['loss'] = f'{val_loss:.4f}'
+                eval_task_dict[val_name]['acc'] = f'{val_loss:.4f}'
             flat_results = {}
             print(f"\nStep {step} eval datasets results:\n{eval_task_dict}\n")
             print(f'Eval finished...... take time: {time.time() - val_start}s\n')
@@ -170,12 +170,12 @@ if __name__ == "__main__":
 
         wandb_stats = {
                 "step": step,
-                "train/loss": loss,
-                "train/acc": acc,
-                "train/steps_per_sec": steps_per_sec,
-                "train/tokens_per_sec": tokens_per_sec,
-                "sequences_processed": sequences_processed,
-                "tokens_processed": tokens_processed,
+                "train/loss": f'{loss:4f}',
+                "train/acc": f'{acc:4f}',
+                "train/steps_per_sec": f'{steps_per_sec:4f}',
+                "train/tokens_per_sec": f'{tokens_per_sec:4f}',
+                "sequences_processed": f'{sequences_processed:4f}',
+                "tokens_processed": f'{tokens_processed:4f}',
             }
         print(wandb_stats)
         # pbar.set_postfix({'loss': loss, 'last_loss': last_loss})
