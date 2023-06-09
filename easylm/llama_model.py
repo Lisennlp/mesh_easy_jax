@@ -1043,11 +1043,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                           donate_argnums=(0, ),
                                 )
 
-    #     self.eval_ = pjit(self.eval_step,
-    #                     in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
-    #                     out_shardings=(PS(), PS()),
-    #                     donate_argnums=(0,),
-    # )
         # 保存的是每个参数怎么进行shard和gather的函数
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
