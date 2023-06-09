@@ -10,3 +10,4 @@ download
 *.ipynb
 __pycache__
 commit.sh
+wandb
