@@ -3,6 +3,7 @@ import json
 import time
 import os
 from collections import defaultdict
+from itertools import cycle
 
 import numpy as np
 # import wandb
@@ -91,20 +92,8 @@ if __name__ == "__main__":
 
     t = build_model(params, tpu_name, region, preemptible, version=args.version)
 
-    # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
-    
-    # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
     step = 0
-    train_load_restore = None
-    # except Exception as e:
-    #     print(f"Save failed with error {e}, trying to load instead...", e)
-    #     step, aux = t.load(bucket, model_dir)
-    #     train_load_restore = aux.get("train_loader", None)
-
-    #     if train_load_restore is None:
-    #         print("Failed to restore train loader state")
-
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
@@ -117,11 +106,10 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+        val_sets[k] = cycle(load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq']))
 
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
-    # val_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
-
+    train_dataset = cycle(train_dataset)
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
     #                              seq,
@@ -136,13 +124,13 @@ if __name__ == "__main__":
     start = time.time()
     for val_set in val_sets.values():
         t.eval(next(val_set))
+        break
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
     # project = params.get("wandb_project", "mesh-transformer-jax")
     # wandb.init(project=project, entity="eleutherai", name=params["name"], config=params)
     wandb = None
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
-
     while True:
         loss, acc = t.train(next(train_dataset))
         if (step % ckpt_every == 0 and step) or step == total_steps:
@@ -158,29 +146,22 @@ if __name__ == "__main__":
         if step % val_every == 0:
             eval_task_dict = defaultdict(dict)
             for val_name, val_set in val_sets.items():
+                print(f'Evaluating {val_name}......')
                 val_loss, val_acc = [], []
                 val_start = time.time()
-                while True:
-                    if len(val_loss) % 100 == 0:
-                        print(f'{val_name}-{len(val_loss)}-loss: {np.array(val_loss).mean()}')
-                    try:
-                        loss, acc = t.eval(next(val_set))
-                    except:
-                        print(f'Eval ‘{val_name}’ finished...... take time: {time.time() - val_start}s')
-                        break
+                for _ in range(val_batches):
+                    loss, acc = t.eval(next(val_set))
                     val_loss.append(loss)
                     val_acc.append(acc)
-                
+
                 val_loss = np.array(val_loss).mean()
                 val_acc = np.array(val_acc).mean()
 
                 eval_task_dict[val_name]['loss'] = val_loss
                 eval_task_dict[val_name]['acc'] = val_acc
-
-                print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
             flat_results = {}
-            dumped = json.dumps(eval_task_dict, indent=2)
-            print(f"Step {step} val results: {dumped}\n\n")
+            print(f"\nStep {step} eval datasets results:\n{eval_task_dict}\n")
+            print(f'Eval finished...... take time: {time.time() - val_start}s\n')
         step += 1
         steps_per_sec = step / (time.time() - start)
         tokens_per_sec = tokens_per_step * steps_per_sec
@@ -188,6 +169,7 @@ if __name__ == "__main__":
         tokens_processed = tokens_per_step * step
 
         wandb_stats = {
+                "step": step,
                 "train/loss": loss,
                 "train/acc": acc,
                 "train/steps_per_sec": steps_per_sec,
