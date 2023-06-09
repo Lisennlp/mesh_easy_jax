@@ -67,7 +67,7 @@ def build_model(params, tpu_name, region, preemptible, version=1):
         raise Exception(f"Version {version} does not exist")
 
     t = TPUCluster((tpu_size // cores_per_replica, cores_per_replica), len(conns), model_fn, version=version)
-    return t
+    return t, params
 
 
 # python  EasyLM/models/llama/convert_torch_to_easylm.py \

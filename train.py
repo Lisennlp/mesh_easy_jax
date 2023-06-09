@@ -57,7 +57,6 @@ if __name__ == "__main__":
     if args.new:
         print(f"Starting experiment {params['name']} from scratch! "
               f"all data in gs://{params['bucket']}/{params['model_dir']}/ will be deleted")
-        # input("Hit enter to continue")
 
     tpu_name = args.tpu
     region = args.tpu_region
@@ -90,7 +89,7 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
-    t = build_model(params, tpu_name, region, preemptible, version=args.version)
+    t, params = build_model(params, tpu_name, region, preemptible, version=args.version)
 
     print(f'bucket： {bucket} model_dir: {model_dir}')
     step = 0
@@ -127,9 +126,9 @@ if __name__ == "__main__":
         break
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
-    # project = params.get("wandb_project", "mesh-transformer-jax")
-    # wandb.init(project=project, entity="eleutherai", name=params["name"], config=params)
-    wandb = None
+    project = params.get("wandb_project", "mesh-transformer-jax")
+    wandb.init(project=project, entity="caiyun", name=params["name"], config=params)
+    # wandb = None
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
     while True:
         loss, acc = t.train(next(train_dataset))
@@ -178,5 +177,8 @@ if __name__ == "__main__":
                 "tokens_processed": f'{tokens_processed:4f}',
             }
         print(wandb_stats)
+
+        wandb.log(wandb_stats, step)
+        wandb.log(eval_task_dict, step)
         # pbar.set_postfix({'loss': loss, 'last_loss': last_loss})
         # pbar.update()
