@@ -20,10 +20,13 @@ import jax
 from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
-
+# 设置jax.Array和pjit适配，好像没什么用
 jax.config.update('jax_array', True)
+# 设置gpu不可见，好像没什么用
 tf.config.experimental.set_visible_devices([], "GPU")
+# 设置自动初始化tpu后端，当存在多个mesh时。
 os.environ['JAX_PLATFORMS'] = ''
+# 函数泄露问题，好像没什么用
 os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
 def parse_args():
@@ -113,10 +116,11 @@ if __name__ == "__main__":
 
     val_sets = {}
 
-    # for k, v in params['val_set'].items():
-        # val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+    for k, v in params['val_set'].items():
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=global_val_batch, seq_len=params['seq'])
+
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
-    val_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
+    # val_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,
@@ -130,9 +134,9 @@ if __name__ == "__main__":
     print(f"Train fn compiled in {time.time() - start:.06}s")
 
     start = time.time()
-    # for val_set in val_sets.values():
-    #     t.train(next(val_set))
-    t.eval(next(val_dataset))
+    for val_set in val_sets.values():
+        t.eval(next(val_set))
+   # t.eval(next(val_dataset))
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
     # project = params.get("wandb_project", "mesh-transformer-jax")
@@ -141,7 +145,7 @@ if __name__ == "__main__":
     # pbar = tqdm(initial=step, total=total_steps, desc="Training progress")
 
     while True:
-        loss, last_loss = t.train(next(train_dataset))
+        loss, acc = t.train(next(train_dataset))
         # wandb.log({'train/loss': loss, 'train/last_loss': last_loss}, step)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
@@ -153,39 +157,38 @@ if __name__ == "__main__":
                 print("Training completed!")
                 exit()
 
-        if step % val_every == 0:
-            eval_task_dict = defaultdict(dict)
-            for val_name, val_set in val_sets.items():
-                val_loss, val_acc = [], []
-                val_start = time.time()
-                while True:
-                    if len(val_loss) % 100 == 0:
-                        print(f'{val_name}-{len(val_loss)}-loss: {np.array(val_loss).mean()}')
-                    try:
-                        loss, acc = t.eval(next(val_set))
-                    except:
-                        print(f'Eval ‘{val_name}’ finished...... take time: {time.time() - val_start}s')
-                        break
-                    val_loss.append(loss)
-                    val_acc.append(acc)
+        # if step % val_every == 0:
+        #     eval_task_dict = defaultdict(dict)
+        #     for val_name, val_set in val_sets.items():
+        #         val_loss, val_acc = [], []
+        #         val_start = time.time()
+        #         while True:
+        #             if len(val_loss) % 100 == 0:
+        #                 print(f'{val_name}-{len(val_loss)}-loss: {np.array(val_loss).mean()}')
+        #             try:
+        #                 loss, acc = t.eval(next(val_set))
+        #             except:
+        #                 print(f'Eval ‘{val_name}’ finished...... take time: {time.time() - val_start}s')
+        #                 break
+        #             val_loss.append(loss)
+        #             val_acc.append(acc)
                 
-                val_loss = np.array(val_loss).mean()
-                val_acc = np.array(val_acc).mean()
+        #         val_loss = np.array(val_loss).mean()
+        #         val_acc = np.array(val_acc).mean()
 
-                eval_task_dict[val_name]['loss'] = val_loss
-                eval_task_dict[val_name]['acc'] = val_acc
+        #         eval_task_dict[val_name]['loss'] = val_loss
+        #         eval_task_dict[val_name]['acc'] = val_acc
 
-                print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
-                # wandb.log(f'{name} val loss: {float(val_loss)} acc: {float(val_acc)}', step)
+        #         print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
+        #         # wandb.log(f'{name} val loss: {float(val_loss)} acc: {float(val_acc)}', step)
 
-            # results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
+        #     # results = evaluator.evaluate(adaptor, eval_task_dict, False, 0, None)
 
-            flat_results = {}
-            dumped = json.dumps(eval_task_dict, indent=2)
-            print(f"Step {step} val results: {dumped}\n\n")
+        #     flat_results = {}
+        #     dumped = json.dumps(eval_task_dict, indent=2)
+        #     print(f"Step {step} val results: {dumped}\n\n")
             # wandb.log(flat_results, step)
         step += 1
-
         steps_per_sec = step / (time.time() - start)
         tokens_per_sec = tokens_per_step * steps_per_sec
         sequences_processed = sequences_per_step * step
@@ -193,7 +196,7 @@ if __name__ == "__main__":
 
         wandb_stats = {
                 "train/loss": loss,
-                "train/last_loss": last_loss,
+                "train/acc": acc,
                 "train/steps_per_sec": steps_per_sec,
                 "train/tokens_per_sec": tokens_per_sec,
                 "sequences_processed": sequences_processed,
