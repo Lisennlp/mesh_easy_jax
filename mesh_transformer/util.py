@@ -1,3 +1,5 @@
+import typing
+
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import with_sharding_constraint
@@ -32,11 +34,11 @@ def global_norm(updates, use_psum=True):
         pre_sqrt = jax.lax.psum(pre_sqrt, "shard")
     return jnp.sqrt(pre_sqrt)
 
-import typing
+
 class ClipByGlobalNormState(typing.Type[OptState]):
     """The `clip_by_global_norm` transformation is stateless."""
 
-
+# tpu pod不能用这个clip
 def clip_by_global_norm(max_norm, use_psum=True) -> GradientTransformation:
     """Clip updates using their global norm.
 

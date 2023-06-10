@@ -7,7 +7,7 @@ import ray
 from mesh_transformer import util
 from mesh_transformer.TPU_cluster import TPUCluster
 from mesh_transformer.transformer_shard import CausalTransformer, CausalTransformerV2
-from mesh_transformer.util import clip_by_global_norm, additive_weight_decay
+from mesh_transformer.util import additive_weight_decay
 from ray_tpu import create_tpu, wait_til, get_connection, start_ray
 
 from easylm.llama_model import (
@@ -45,7 +45,8 @@ def build_model(params, tpu_name, region, preemptible, version=1):
 
     opt = optax.chain(
         optax.scale(1 / gradient_accumulation_steps),
- #       clip_by_global_norm(1, use_psum=(version == 1)),
+        # clip_by_global_norm(1, use_psum=(version != 2)),
+        optax.clip_by_global_norm(1.0),
         optax.scale_by_adam(),
         additive_weight_decay(weight_decay),
         optax.scale(-1),
