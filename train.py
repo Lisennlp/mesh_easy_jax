@@ -81,6 +81,7 @@ if __name__ == "__main__":
     keep_every = params["keep_every"]
     eval_tasks = params["eval_harness_tasks"]
     total_steps = params["total_steps"]
+    eopch_num = params.get('epoch_num', 3)
 
     eval_batch_size = 16
 
@@ -92,10 +93,9 @@ if __name__ == "__main__":
     # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
     # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
-    step = 0
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print('train_batch_size =', train_batch_size)
-    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
+    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
 
     global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
 
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     val_sets = {}
 
     for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'])
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=eopch_num)
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
@@ -126,9 +126,10 @@ if __name__ == "__main__":
 
     project = params.get("wandb_project", "mesh-transformer-jax")
     wandb.init(project=project, name=params["name"], config=params)
+    step = 0
     while True:
         loss, acc = t.train(next(train_dataset))
-        if (step % ckpt_every == 0) or step == total_steps:
+        if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
                 #    aux={"Train_loader": train_dataset.get_state()},
                    init=False,
