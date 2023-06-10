@@ -27,6 +27,35 @@ os.environ['JAX_PLATFORMS'] = ''
 os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
 wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
+
+
+def update_llama_params(params):
+#     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
+    # params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
+    # params['load_checkpoint'] = params.get('load_checkpoint', 'params::gs://llm_base_models/easylm/lama_trans_7b.stream')
+    params['load_checkpoint'] = ''
+    # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
+    params['num_hidden_layers'] = params.get('layers', 32)
+    params['seed'] = params.get('seed', 42)
+    params['rng_keys'] = ('params', 'dropout', 'fcm')
+    params['gradient_checkpointing'] = params.get('gradient_checkpointing', 'nothing_saveable')
+    params['embd_pdrop'] = params.get('embd_pdrop', 0.1)
+    params['attn_pdrop'] = params.get('attn_pdrop', 0.0)
+    params['resid_pdrop'] = params.get('resid_pdrop', 0.05)
+    params['transformation'] = params.get('transformation', 'pjit')
+    params['initializer_range'] = params.get('initializer_range', 0.02)
+    params['fcm_min_ratio'] = params.get('fcm_min_ratio', 0.0)
+    params['fcm_max_ratio'] = params.get('fcm_max_ratio', 0.0)
+    params['use_cache'] = params.get('use_cache', True)
+    params['rms_norm_eps'] = params.get('rms_norm_eps', 1e-6)
+    params['max_sequence_length'] = params.get('seq', 2048)
+    params['num_attention_heads'] = params.get('n_heads', 32)
+    params['hidden_size'] = params.get('d_model', 4096)
+    params['vocab_size'] = params.get('n_vocab', 32000)
+    params['tie_word_embeddings'] = params.get('tie_word_embeddings', False)
+    params['save_optimizer_state'] = params.get('save_optimizer_state', True)
+
+
 def parse_args():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
@@ -88,8 +117,11 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
-    t = build_model(params, tpu_name, region, preemptible, version=args.version)
+    if int(args.version) == 3:
+        update_llama_params(params)
 
+    print(f'version: {args.version}\nparams: {params}')
+    t = build_model(params, tpu_name, region, preemptible, version=args.version)
     # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
     # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
