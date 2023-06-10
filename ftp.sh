@@ -12,8 +12,8 @@ if [ $# -ne 2 ]; then
 fi
 
 # 获取命令行参数
-file_name=$2
-direction=$1
+file_name=$1
+direction=$2
 
 # 检查传输方向
 if [ "$direction" -eq 0 ]; then

@@ -1072,15 +1072,28 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
-        self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir)
+        self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
 
         if self.config.load_checkpoint:
-            print(f'Start load pretrained weight!!!')
-            _, restored_params = self.checkpointer.load_trainstate_checkpoint(self.config.load_checkpoint, train_state_shapes['params'], self.shard_fns['params'])
+            print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
+            if 'train_state' in self.config.load_checkpoint:
+                print(f'Loading train_state')
+                self.state, _ = self.checkpointer.load_trainstate_checkpoint(
+                                                                            load_from=self.config.load_checkpoint, 
+                                                                            trainstate_target=train_state_shapes,
+                                                                            trainstate_shard_fns=self.shard_fns
+                                                                            )
+            else:
+                print(f'Loading params')
+                _, restored_params = self.checkpointer.load_trainstate_checkpoint(
+                                                                            load_from=self.config.load_checkpoint, 
+                                                                            trainstate_target=train_state_shapes['params'],
+                                                                            trainstate_shard_fns=self.shard_fns['params']
+                                                                            )
             self.state = self.init_from_params(restored_params)
             del restored_params
             jax.lib.xla_bridge.get_backend().defragment()
-            print(f'Load pretrained weight finished!!!')
+            print(f'Loaded pretrained weight finished!!!')
         else:
             print(f'Train model from scrath!!!')
             self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key

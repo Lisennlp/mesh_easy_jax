@@ -42,7 +42,9 @@ def build_model(params, tpu_name, region, preemptible, version=1):
 
  #   with multiprocessing.pool.ThreadPool(processes=len(conns)) as p:
   #      p.map(functools.partial(start_ray, address=address, version=version), conns)
-
+    # chain就是依次经过这些函数，最后调用def scale_by_schedulestep_size_fn: base.Schedule)
+    # 接受一个Schedule函数作为输入，然后在内部将opt_state.count（step）传入值该函数中
+    # https://github.com/deepmind/optax/blob/507ce1369241a9c05490bf0e0e020cbf51d249c7/optax/_src/transform.py#L786
     opt = optax.chain(
         optax.scale(1 / gradient_accumulation_steps),
         # clip_by_global_norm(1, use_psum=(version != 2)), # tpu pod 不能使用

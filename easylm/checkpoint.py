@@ -36,10 +36,10 @@ class StreamingCheckpointer(object):
         self.enable = enable
 
     def save_checkpoint(self, train_state, path, gather_fns=None):
-        # if self.enable:
-        #     path = os.path.join(self.checkpoint_dir, filename)
-        # else:
-        #     path = '/dev/null'
+        if not self.enable:
+            # /dev/null是一个特殊的设备文件，用于丢弃所有写入它的数据，而不产生任何输出或保存任何内容。在Unix和类Unix系统中，它被用作一个空设备或黑洞。
+            # 将模型保存到/dev/null路径实际上意味着该模型没有被保存到任何实际的文件系统路径中，而是被丢弃或忽略。在这种情况下，模型没有被保存到磁盘上的任何位置，无法进行后续的加载或检索。这通常是一个无效的保存操作，可能是由于错误或意外的设置导致的。
+            path = '/dev/null'
         self.save_train_state_to_file(
             train_state, path, gather_fns, self.config.float_dtype
         )
@@ -53,9 +53,10 @@ class StreamingCheckpointer(object):
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
         if not path.startswith('gs'):
-            path = os.path.join('~/models/', path)
+            # pass
+            # path = os.path.join('~/models/', path)
             print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
-
+        # if jax.process_index() == 0:  # 不需要
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
                 if gather_fns is not None:
