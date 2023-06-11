@@ -134,7 +134,7 @@ if __name__ == "__main__":
     keep_every = params["keep_every"]
     eval_tasks = params["eval_harness_tasks"]
     total_steps = params["total_steps"]
-    eopch_num = params.get('epoch_num', 3)
+    eopch_num = params.get('epoch_num', 10)
 
     eval_batch_size = 16
 
@@ -162,7 +162,6 @@ if __name__ == "__main__":
 
     for k, v in params['val_set'].items():
         val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=eopch_num)
-    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'])
 
     # use dynamic seq length unless pe is fixed
     # adaptor = EvalHarnessAdaptor(t,

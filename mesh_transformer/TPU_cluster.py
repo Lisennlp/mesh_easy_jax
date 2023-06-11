@@ -193,7 +193,6 @@ class TPUCluster:
 
         while len(meta["checkpoints"]) > keep_n:
             ckpt_to_delete = meta["checkpoints"].pop(0)
-
             try:
                 del all_aux[str(ckpt_to_delete)]
             except:
@@ -201,6 +200,8 @@ class TPUCluster:
 
             if delete_old:
                 print(f"deleting checkpoint {ckpt_to_delete}")
+                if int(ckpt_to_delete) == 0:
+                    continue
                 for blob in client.list_blobs(bucket, prefix=f"{path}/step_{ckpt_to_delete}/"):
                     # print(f"deleting {blob.name}")
                     assert path in blob.name
