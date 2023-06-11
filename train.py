@@ -2,6 +2,7 @@ import argparse
 import json
 import time
 import os
+import re
 from collections import defaultdict
 
 import numpy as np
@@ -14,6 +15,7 @@ from tasks.eval_harness import EvalHarnessAdaptor
 from tfrecord_loader import TFRecordNewInputs, load_tfrecord_dataset
 import multiprocessing
 import tensorflow as tf
+from google.cloud import storage
 
 import jax
 
@@ -29,13 +31,33 @@ os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 
 
+def search_newest_train_state(params):
+    bucket_name = params['bucket']
+    directory_path = params['model_dir']
+
+    client = storage.Client()
+    model_dirs = {}
+    for blob in client.list_blobs(bucket_name, prefix=directory_path):
+        if 'step_' in blob.name:
+            step = re.findall('step_(\d+)',blob.name)[0]
+            model_dirs[int(step)] = blob.name
+    model_dirs = sorted(model_dirs.items(), key=lambda x: x[0])
+    step, model_path = model_dirs[-1]
+    if step > 0:
+        model_path = f'trainstate::gs://{model_path}'
+        assert 'train_state' in model_path
+    else:
+        model_path = f'params::gs://{model_path}'
+    return step, model_path
+
+
 def update_llama_params(params):
 #     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
     # params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
     # params['load_checkpoint'] = params.get('load_checkpoint', 'params::gs://llm_base_models/easylm/lama_trans_7b.stream')
-    params['load_checkpoint'] = ''
-    params['load_checkpoint'] = 'trainstate::gs://llm_base_models/llama7b_finetune_mesh_jax_flax/step_60/streaming_train_state'
-
+    params['step'], params['load_checkpoint'] = search_newest_train_state(params)
+    print(f'load_checkpoint: {params["load_checkpoint"]}')
+    # params['load_checkpoint'] = 'trainstate::gs://llm_base_models/llama7b_finetune_mesh_jax_flax/step_60/streaming_train_state'
     # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
     params['num_hidden_layers'] = params.get('layers', 32)
     params['seed'] = params.get('seed', 42)
