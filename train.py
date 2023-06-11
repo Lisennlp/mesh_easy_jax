@@ -32,6 +32,7 @@ wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 
 
 def search_newest_train_state(params):
+    """auto search bucket newest checkpoint path"""
     bucket_name = params['bucket']
     directory_path = params['model_dir']
 
@@ -52,12 +53,8 @@ def search_newest_train_state(params):
 
 
 def update_llama_params(params):
-#     params['load_checkpoint'] = 'params::/home/lishengping/models/trans_7b/llama_trans_7b.stream'
-    # params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
-    # params['load_checkpoint'] = params.get('load_checkpoint', 'params::gs://llm_base_models/easylm/lama_trans_7b.stream')
     params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
     print(f'load_checkpoint: {params["load_checkpoint"]}')
-    # params['load_checkpoint'] = 'trainstate::gs://llm_base_models/llama7b_finetune_mesh_jax_flax/step_60/streaming_train_state'
     # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
     params['num_hidden_layers'] = params.get('layers', 32)
     params['seed'] = params.get('seed', 42)
