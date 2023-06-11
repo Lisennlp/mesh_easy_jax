@@ -34,7 +34,7 @@ def update_llama_params(params):
     # params['load_checkpoint'] = 'params::/home/lishengping/models/trans_belle_7b/belle_7b.stream'
     # params['load_checkpoint'] = params.get('load_checkpoint', 'params::gs://llm_base_models/easylm/lama_trans_7b.stream')
     params['load_checkpoint'] = ''
-    # params['load_checkpoint'] = 'trainstate:gs://llm_base_models/llama7b_finetune_mesh_jax_flax/step_60/streaming_train_state'
+    params['load_checkpoint'] = 'trainstate::gs://llm_base_models/llama7b_finetune_mesh_jax_flax/step_60/streaming_train_state'
 
     # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
     params['num_hidden_layers'] = params.get('layers', 32)

@@ -133,11 +133,10 @@ class StreamingCheckpointer(object):
             for key, value in flattened_target.items():
                 if key not in flattend_train_state and value == empty_node:
                     flattend_train_state[key] = value
-
+        print(f'flattend_train_state: {len(flattend_train_state)}')
         train_state = unflatten_dict(flattend_train_state)
         if target is None:
             return train_state
-
         return from_state_dict(target, train_state)
 
     @staticmethod
@@ -178,6 +177,7 @@ class StreamingCheckpointer(object):
         restored_params = None
         if load_type == 'trainstate':
             # Load the entire train state in the streaming format
+            print(f'load_type: {load_type} || load_path: {load_path}')
             train_state = cls.load_checkpoint(
                 path=load_path,
                 target=trainstate_target,

@@ -16,6 +16,7 @@ from flax.linen import combine_masks, make_causal_mask
 from flax.linen.attention import dot_product_attention_weights
 from flax.traverse_util import flatten_dict, unflatten_dict
 from flax.linen import partitioning as nn_partitioning
+from flax.core.frozen_dict import FrozenDict
 
 import sentencepiece as spm
 from transformers.configuration_utils import PretrainedConfig
@@ -1012,6 +1013,27 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         opt_state = self.optimizer.init(params)
         return {'params': params, 'opt_state': opt_state, 'step': 0}
+
+    def recovery_train_state(self):
+        for k, v in self.state.items():
+            if k == 'opt_state' and isinstance(v, dict):
+                # 不是很明白保存的优化器为什么是这样
+                assert '2' in v and '5' in v
+                # 正好对应optax.chain()的6个位置的对象。
+                self.state[k] = (
+                                optax._src.base.EmptyState(), 
+                                optax._src.base.EmptyState(), 
+                                optax._src.transform.ScaleByAdamState(
+                                                                    count=v['2']['count'],
+                                                                    mu=FrozenDict(v['2']['mu']),
+                                                                    nu=FrozenDict(v['2']['nu']),
+                                                                        ),
+                                optax._src.base.EmptyState(), 
+                                optax._src.base.EmptyState(), 
+                                optax._src.transform.ScaleByScheduleState(v['5']['count'])
+                                )
+            elif k == 'params' and isinstance(v, dict):
+                self.state[k] = FrozenDict(v)
     
         
     def init_state(self):
@@ -1040,14 +1062,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.eval_ = pjit(self.eval_step,
                           in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
                           out_shardings=(PS(), PS()),
-                          donate_argnums=(0, ),
+                        #   donate_argnums=(0, ),
                                 )
-
-    #     self.eval_ = pjit(self.eval_step,
-    #                     in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
-    #                     out_shardings=(PS(), PS()),
-    #                     donate_argnums=(0,),
-    # )
         # 保存的是每个参数怎么进行shard和gather的函数
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
@@ -1080,9 +1096,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 print(f'Loading train_state')
                 self.state, _ = self.checkpointer.load_trainstate_checkpoint(
                                                                             load_from=self.config.load_checkpoint, 
-                                                                            trainstate_target=train_state_shapes,
+                                                                            trainstate_target=None,
                                                                             trainstate_shard_fns=self.shard_fns
                                                                             )
+                # 为什么要进行恢复参数，因为self.train_的pjit编译的时候，对self.state进行的donate（加入缓冲区）节省内存，加快速度。
+                self.recovery_train_state()
             else:
                 print(f'Loading params')
                 _, restored_params = self.checkpointer.load_trainstate_checkpoint(
@@ -1090,9 +1108,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                                                             trainstate_target=train_state_shapes['params'],
                                                                             trainstate_shard_fns=self.shard_fns['params']
                                                                             )
-            self.state = self.init_from_params(restored_params)
-            del restored_params
-            jax.lib.xla_bridge.get_backend().defragment()
+                self.state = self.init_from_params(restored_params)
+                del restored_params
+                jax.lib.xla_bridge.get_backend().defragment()
             print(f'Loaded pretrained weight finished!!!')
         else:
             print(f'Train model from scrath!!!')
