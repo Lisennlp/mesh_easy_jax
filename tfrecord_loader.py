@@ -107,6 +107,7 @@ def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, 
     ds = tf.data.Dataset.from_tensor_slices(fnames)#.repeat()
     ds = ds.apply(tf.data.TFRecordDataset)
     ds = ds.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.shuffle(buffer_size=10000) # 从文件中取buffer_size数据，然后打乱
     ds = ds.padded_batch(batch_size=np.prod(batch_size), 
                         padded_shapes={'input_ids': [seq_len], 'labels': [seq_len]},
                         padding_values={'input_ids': 0, 'labels': 0}, 

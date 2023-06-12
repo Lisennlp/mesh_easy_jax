@@ -81,13 +81,8 @@ def parse_args():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--tpu", type=str, help="Name of TPU to train on.")
-    parser.add_argument("--tpu_region", type=str, help="Region of TPU to train on.")
     parser.add_argument("--preemptible", action="store_true")
-
     parser.add_argument("--config", type=str, default='configs/6B_roto_256_test.json', help="Config file location")
-
-    parser.add_argument("--new", action="store_true", help="If set, deletes previous checkpoint, if it exists, and "
-                                                           "starts a new training run")
     parser.add_argument("--version", type=int, default=3, help="Choose which model version to use, 1: pjit mesh-haiku-llama 2: xmap mesh-haiku-llama 3: pjit mesh-flax-llama")
 
     args = parser.parse_args()
@@ -107,9 +102,7 @@ if __name__ == "__main__":
         # input("Hit enter to continue")
 
     tpu_name = args.tpu
-    region = args.tpu_region
     preemptible = args.preemptible
-    clean_start = args.new
 
     gradient_accumulation_steps = params.get("gradient_accumulation_steps", 1)
     per_replica_batch = params["per_replica_batch"]
@@ -133,7 +126,7 @@ if __name__ == "__main__":
     total_steps = params["total_steps"]
     eopch_num = params.get('epoch_num', 10)
 
-    eval_batch_size = 16
+    clip_norm = params.get('clip_norm', 1.0)
 
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
@@ -145,9 +138,8 @@ if __name__ == "__main__":
     t = build_model(params, tpu_name, region, preemptible, version=args.version)
     # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
-    # t.save(0, bucket, model_dir, init=True, overwrite=clean_start)
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
-    print('train_batch_size =', train_batch_size)
+    print(f'train_batch_size: {train_batch_size}')
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
 
     global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
