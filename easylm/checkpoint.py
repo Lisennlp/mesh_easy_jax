@@ -36,9 +36,14 @@ class StreamingCheckpointer(object):
         self.enable = enable
 
     def save_checkpoint(self, train_state, path, gather_fns=None):
+        """ /dev/null是一个特殊的设备文件，用于丢弃所有写入它的数据，而不产生
+            任何输出或保存任何内容。在Unix和类Unix系统中，它被用作一个空设备或黑洞。
+            将模型保存到/dev/null路径实际上意味着该模型没有被保存到任何实际的文件
+            系统路径中，而是被丢弃或忽略。在这种情况下，模型没有被保存到磁盘上的
+            任何位置，无法进行后续的加载或检索。这通常是一个无效的保存操作，可能是
+            由于错误或意外的设置导致的。
+        """
         if not self.enable:
-            # /dev/null是一个特殊的设备文件，用于丢弃所有写入它的数据，而不产生任何输出或保存任何内容。在Unix和类Unix系统中，它被用作一个空设备或黑洞。
-            # 将模型保存到/dev/null路径实际上意味着该模型没有被保存到任何实际的文件系统路径中，而是被丢弃或忽略。在这种情况下，模型没有被保存到磁盘上的任何位置，无法进行后续的加载或检索。这通常是一个无效的保存操作，可能是由于错误或意外的设置导致的。
             path = '/dev/null'
         self.save_train_state_to_file(
             train_state, path, gather_fns, self.config.float_dtype
@@ -46,6 +51,7 @@ class StreamingCheckpointer(object):
 
     @staticmethod
     def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
+        """if jax.process_index() == 0:  -> 不需要，通过self.enable进行判断"""
         print(f'Model save path: {path}')
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
@@ -53,10 +59,7 @@ class StreamingCheckpointer(object):
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
         if not path.startswith('gs'):
-            # pass
-            # path = os.path.join('~/models/', path)
             print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
-        # if jax.process_index() == 0:  # 不需要
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
                 if gather_fns is not None:
@@ -72,7 +75,6 @@ class StreamingCheckpointer(object):
         mlxu.save_pickle(obj, path)
 
     def save_all(self, train_state, gather_fns, metadata=None, dataset=None, milestone=False, model_dir=None):
-        # step = int(jax.device_get(train_state.step))
         if self.config.save_optimizer_state:
             checkpoint_state = train_state
             checkpoint_name = 'streaming_train_state'
@@ -86,17 +88,6 @@ class StreamingCheckpointer(object):
             path = os.path.join(model_dir, checkpoint_name)
         else:
             path = checkpoint_name
-        # if milestone:
-        #     # Save a milestone checkpoint that will not be overwritten
-        #     # self.save_pickle(metadata, f'metadata_{step}.pkl')
-        #     # self.save_pickle(dataset, f'dataset_{step}.pkl')
-        #     self.save_checkpoint(
-        #         checkpoint_state, f'{model_dir}_{step}', checkpoint_gather_fns
-        #     )
-        # else:
-            # Save a normal checkpoint that can be overwritten
-            # self.save_pickle(metadata, 'metadata.pkl')
-            # self.save_pickle(dataset, 'dataset.pkl')
         self.save_checkpoint(
                 checkpoint_state, f'{path}', checkpoint_gather_fns
             )
@@ -157,9 +148,21 @@ class StreamingCheckpointer(object):
         return from_state_dict(target, state_dict)
 
     @classmethod
-    def load_trainstate_checkpoint(cls, load_from, trainstate_target=None,
+    def load_trainstate_checkpoint(cls,
+                                   load_from,
+                                   trainstate_target=None,
                                    trainstate_shard_fns=None,
                                    disallow_trainstate=False):
+        """
+        params:
+            load_from: 参数路径
+            trainstate_target: 目标参数（不包括opt）
+            trainstate_shard_fns: train state shard策略函数，是一个字典，key为参数名的元组，value为shard函数
+            disallow_trainstate: 是否允许加载train state
+        return:
+            train_state: model params + opt
+            restored_params: model params
+        """
         if trainstate_target is not None:
             params_target = trainstate_target["params"]
         else:

@@ -1,11 +1,15 @@
 import ray
 import time
-import numpy as np
 from queue import Queue
+
+import jax
+import haiku as hk
+import numpy as np
 
 from mesh_transformer.util import head_print
 from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
 from jax.experimental import PartitionSpec as P
+from jax.experimental.maps import thread_resources, ResourceEnv, Mesh
 
 
 @ray.remote(resources={"tpu": 1})
@@ -20,11 +24,7 @@ class NetworkRunner(object):
 
     def run(self):
         print(f"jax runtime initialization starting")
-        import jax
-        from jax.experimental.maps import thread_resources, ResourceEnv, Mesh
-        import haiku as hk
         # jax.experimental.maps.EXPERIMENTAL_SPMD_LOWERING = True
-
         thread_resources.env = ResourceEnv(Mesh(np.empty((), dtype=object), ()), ())
 
         start = time.time()
