@@ -1,6 +1,7 @@
 import itertools
 import json
 import time
+import os
 
 import ray
 
@@ -145,28 +146,13 @@ class TPUCluster:
 
     @func_set_timeout(1800)
     def save(self, step, bucket, path, aux=None, init=False, overwrite=False, keep_n=3, delete_old=True):
-        assert path
-        client = storage.Client()
 
+        assert path
+        meta_path = "gs://{bucket}/{path}/meta.json"
+
+        client = storage.Client()
         if aux is None:
             aux = {}
-
-        # 删除所有历史checkpoint
-        # if init:
-        #     # check existing checkpoint folder does not exist, and delete it if it does
-        #     for blob in client.list_blobs(bucket, prefix=f"{path}/"):
-        #         assert overwrite
-        #         # print(f"deleting {blob.name}")
-        #         assert path in blob.name
-        #         blob.delete()
-
-        #     # create metadata file
-        #     with open(f"gs://{bucket}/{path}/meta.json", "w") as f:
-        #         json.dump({
-        #             "step": 0,
-        #             "checkpoints": [],
-        #             "aux": {}
-        #         }, f)
 
         # do sharded checkpoint writing
         start = time.time()
@@ -184,9 +170,16 @@ class TPUCluster:
 
         ray.get(res)
         print(f"Wrote checkpoint in {time.time() - start:.06}s")
-
-        with open(f"gs://{bucket}/{path}/meta.json", "r") as f:
-            meta = json.load(f)
+        # 如果没有meta文件，就创建
+        try:
+            with open(f"{meta_path}", "r") as f:
+                meta = json.load(f)
+        except:
+            meta = {
+                    "step": 0,
+                    "checkpoints": [],
+                    "aux": {}
+            }
 
         meta["step"] = step
         meta["checkpoints"].append(step)
@@ -212,6 +205,5 @@ class TPUCluster:
 
         all_aux[step] = aux
         meta["aux"] = all_aux
-
-        with open(f"gs://{bucket}/{path}/meta.json", "w") as f:
+        with open(f"{meta_path}", "w") as f:
             json.dump(meta, f)
