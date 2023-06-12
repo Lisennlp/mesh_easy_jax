@@ -62,7 +62,7 @@ if __name__ == "__main__":
         ckpt_step = meta["checkpoints"][-1]
     print(f"using checkpoint {ckpt_step}")
 
-    with jax.experimental.maps.mesh(devices, ('dp', 'mp')):
+    with jax.sharding.Mesh(devices, ('dp', 'mp')):
         network = CausalTransformer(params)
 
         start = time.time()

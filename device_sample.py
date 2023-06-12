@@ -70,7 +70,7 @@ if __name__ == "__main__":
     print(f"using checkpoint {ckpt_step}")
 
     total_batch = per_replica_batch * jax.device_count() // cores_per_replica
-    with jax.experimental.maps.mesh(devices, ('dp', 'mp')):
+    with jax.sharding.Mesh(devices, ('dp', 'mp')):
         network = CausalTransformer(params)
 
         start = time.time()

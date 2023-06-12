@@ -363,7 +363,7 @@ if __name__ == "__main__":
     
     print(f'vocab_size: {llama_config.vocab_size}')
         
-    with jax.experimental.maps.Mesh(devices, ('dp', 'mp')):  # XD: mesh -> Mesh
+    with jax.sharding.Mesh(devices, ('dp', 'mp')):  # XD: mesh -> Mesh
         with Timer("initializing network"):  # XD
             if args.jax_method == 'haiku':
                 network = CausalTransformer(params)

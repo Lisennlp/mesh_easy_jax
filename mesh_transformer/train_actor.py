@@ -40,7 +40,7 @@ class NetworkRunner(object):
         head_print(f"jax devices: {jax.device_count()}")
         head_print(f"jax runtime initialized in {time.time() - start:.06}s")
         devices = np.array(jax.devices()).reshape(self.mesh_shape)
-        mesh = jax.experimental.maps.Mesh(devices, ('dp', 'mp'))
+        mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
         with mesh:
             start = time.time()
             # model init
