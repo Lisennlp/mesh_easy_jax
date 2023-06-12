@@ -80,8 +80,6 @@ def update_llama_params(params):
 def parse_args():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tpu", type=str, help="Name of TPU to train on.")
-    parser.add_argument("--preemptible", action="store_true")
     parser.add_argument("--config", type=str, default='configs/6B_roto_256_test.json', help="Config file location")
     parser.add_argument("--version", type=int, default=3, help="Choose which model version to use, 1: pjit mesh-haiku-llama 2: xmap mesh-haiku-llama 3: pjit mesh-flax-llama")
 
@@ -95,14 +93,6 @@ if __name__ == "__main__":
 
     args = parse_args()
     params = json.load(open(args.config, 'r'))
-
-    if args.new:
-        print(f"Starting experiment {params['name']} from scratch! "
-              f"all data in gs://{params['bucket']}/{params['model_dir']}/ will be deleted")
-        # input("Hit enter to continue")
-
-    tpu_name = args.tpu
-    preemptible = args.preemptible
 
     gradient_accumulation_steps = params.get("gradient_accumulation_steps", 1)
     per_replica_batch = params["per_replica_batch"]
@@ -135,7 +125,7 @@ if __name__ == "__main__":
         update_llama_params(params)
 
     print(f'version: {args.version}\nparams: {params}')
-    t = build_model(params, tpu_name, region, preemptible, version=args.version)
+    t = build_model(params, version=args.version)
     # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)

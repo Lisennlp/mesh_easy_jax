@@ -11,7 +11,7 @@ from mesh_transformer.util import additive_weight_decay
 from easylm.llama_model import FlaxLLaMAForCausalLMModule
 
 
-def build_model(params, tpu_name, region, preemptible, version=1):
+def build_model(params, version=1):
     cores_per_replica = params["cores_per_replica"]
     tpu_size = params["tpu_size"]
     assert tpu_size in [8, 32, 128, 256, 512]
