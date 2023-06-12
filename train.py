@@ -161,7 +161,7 @@ if __name__ == "__main__":
     step = 0
     while True:
         input_data = next(train_dataset)
-        if step < skip_step:
+        if step <= skip_step:
             step += 1
             continue
         loss, acc = t.train(input_data)
