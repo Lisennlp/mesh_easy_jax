@@ -1,4 +1,5 @@
 {
+  "epoch_num": 20,
   "save_optimizer_state": true,
   "embd_pdrop": 0.1,
   "resid_pdrop": 0.05,
@@ -32,19 +33,15 @@
 
   "train_set": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
   "val_set": {
-  "test1": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
-  "test2": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords"
+            "test1": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
+            "test2": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords"
   },
 
-  "eval_harness_tasks": [
-  ],
-
   "val_batches": 100,
-  "val_every": 50000,
-  "ckpt_every": 50000,
+  "val_every": 200,
+  "ckpt_every": 200,
   "keep_every": 10000,
 
   "name": "llama7b_finetune",
-  "wandb_project": "mesh-transformer-jax",
-  "comment": ""
+  "wandb_project": "mesh-transformer-jax"
 }

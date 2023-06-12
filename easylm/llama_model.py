@@ -917,7 +917,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        # self.transformer = FlaxLLaMAModule(self.config, dtype=self.dtype)
         t = remat(FlaxLLaMAModule, 
                 static_argnums=(3, 4, 5),
                 policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
@@ -1034,10 +1033,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                 )
             elif k == 'params' and isinstance(v, dict):
                 self.state[k] = FrozenDict(v)
-    
         
     def init_state(self):
-        # lsp
         self.config = LLaMAConfig(**self.config)
         set_random_seed(self.config.seed)
         self.optimizer = self.config.optimizer
@@ -1115,7 +1112,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')
-            self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
+            self.state = self.init_(_key)
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         
@@ -1209,18 +1206,8 @@ class FlaxLLaMAForCausalLM(FlaxLLaMAPreTrainedModel):
         model_kwargs["position_ids"] = model_kwargs["position_ids"][:, -1:] + 1
         return model_kwargs
 
-# append_call_sample_docstring(
-#     FlaxGPTJForCausalLM,
-#     _TOKENIZER_FOR_DOC,
-#     _CHECKPOINT_FOR_DOC,
-#     FlaxCausalLMOutput,
-#     _CONFIG_FOR_DOC,
-# )
-
-
 
 VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
-
 PRETRAINED_VOCAB_FILES_MAP = {}
 
 

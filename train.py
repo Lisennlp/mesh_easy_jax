@@ -112,7 +112,6 @@ if __name__ == "__main__":
     val_every = params["val_every"]
     ckpt_every = params["ckpt_every"]
     keep_every = params["keep_every"]
-    eval_tasks = params["eval_harness_tasks"]
     total_steps = params["total_steps"]
     eopch_num = params.get('epoch_num', 10)
 
@@ -137,13 +136,6 @@ if __name__ == "__main__":
     val_sets = {}
     for k, v in params['val_set'].items():
         val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=eopch_num)
-
-    # use dynamic seq length unless pe is fixed
-    # adaptor = EvalHarnessAdaptor(t,
-    #                              seq,
-    #                              global_val_batch,
-    #                              shrink=pe != "fixed",
-    #                              min_seq=1024 if args.version == 2 else None)  # work around suboptimal pjit layout
 
     start = time.time()
     t.train(next(train_dataset))
