@@ -148,7 +148,7 @@ class TPUCluster:
     def save(self, step, bucket, path, aux=None, init=False, overwrite=False, keep_n=3, delete_old=True):
 
         assert path
-        meta_path = "gs://{bucket}/{path}/meta.json"
+        meta_path = f"gs://{bucket}/{path}/meta.json"
 
         client = storage.Client()
         if aux is None:
@@ -175,6 +175,7 @@ class TPUCluster:
             with open(f"{meta_path}", "r") as f:
                 meta = json.load(f)
         except:
+            print(f'meta file ’{meta_path}‘ is not existed, init meta json.')
             meta = {
                     "step": 0,
                     "checkpoints": [],
@@ -197,7 +198,6 @@ class TPUCluster:
                 if int(ckpt_to_delete) == 0:
                     continue
                 for blob in client.list_blobs(bucket, prefix=f"{path}/step_{ckpt_to_delete}/"):
-                    # print(f"deleting {blob.name}")
                     assert path in blob.name
                     blob.delete()
             else:
