@@ -15,7 +15,7 @@ import jax
 
 
 class TPUCluster:
-    @func_set_timeout(1200)
+    @func_set_timeout(1800)
     def __init__(self,
                  mesh_shape,
                  node_count,
@@ -45,7 +45,7 @@ class TPUCluster:
         self.param_count = ray.get(params)[0]
         print(f"Ray actors created in {time.time() - start:.06}s")
 
-    @func_set_timeout(600)
+    @func_set_timeout(1800)
     def train(self, data):
         masks = data['labels'] > 0
         input_ids = data['input_ids']
@@ -71,7 +71,7 @@ class TPUCluster:
 
         return np.array(loss).mean(), np.array(acc).mean()
 
-    @func_set_timeout(600)
+    @func_set_timeout(1800)
     def eval(self, data):
         masks = data['labels'] > 0
         input_ids = data['input_ids']
@@ -97,7 +97,7 @@ class TPUCluster:
 
         return np.array(loss).mean(), np.array(acc).mean()
 
-    @func_set_timeout(600)
+    @func_set_timeout(1800)
     def generate(self, context, ctx_length, gen_len):
         context = np.array_split(context, len(self.nodes), axis=0)
         ctx_length = np.array_split(ctx_length, len(self.nodes), axis=0)
@@ -112,7 +112,7 @@ class TPUCluster:
 
         return np.concatenate([i[1][0][:, :, 0] for i in ray.get(res)], axis=0)
 
-    @func_set_timeout(600)
+    @func_set_timeout(1800)
     def move(self):
         start = time.time()
         res = []
@@ -143,7 +143,7 @@ class TPUCluster:
         print(f"Checkpoint@step{step} restored in {time.time() - start:.06}s")
         return step, meta["aux"][str(ckpt_step)]
 
-    @func_set_timeout(600)
+    @func_set_timeout(1800)
     def save(self, step, bucket, path, aux=None, init=False, overwrite=False, keep_n=3, delete_old=True):
         assert path
         client = storage.Client()
