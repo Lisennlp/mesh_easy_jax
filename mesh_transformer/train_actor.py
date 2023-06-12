@@ -34,7 +34,7 @@ class NetworkRunner(object):
         warnings.filterwarnings("ignore")
         warnings.filterwarnings("ignore", category=ResourceWarning)
 
-        if jax.host_id() == 0:
+        if jax.process_index() == 0:
             warnings.filterwarnings("default")
 
         head_print(f"jax devices: {jax.device_count()}")
