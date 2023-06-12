@@ -1091,6 +1091,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
 
         if self.config.load_checkpoint:
+            start = time.time()
             print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
             if 'train_state' in self.config.load_checkpoint:
                 print(f'Loading train_state')
@@ -1111,7 +1112,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 self.state = self.init_from_params(restored_params)
                 del restored_params
                 jax.lib.xla_bridge.get_backend().defragment()
-            print(f'Loaded pretrained weight finished!!!')
+            print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')
             self.state = self.init_(_key)  # XD init_xmap -> init_, jnp.array(key.take(mp_per_host)) -> _key
