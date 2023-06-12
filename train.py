@@ -126,19 +126,15 @@ if __name__ == "__main__":
 
     print(f'version: {args.version}\nparams: {params}')
     t = build_model(params, version=args.version)
-    # try:
     print(f'bucket： {bucket} model_dir: {model_dir}')
     train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
     print(f'train_batch_size: {train_batch_size}')
     train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
-
     global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
-
     sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
     tokens_per_step = params['seq'] * sequences_per_step
 
     val_sets = {}
-
     for k, v in params['val_set'].items():
         val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=eopch_num)
 
@@ -171,7 +167,6 @@ if __name__ == "__main__":
         loss, acc = t.train(input_data)
         if (step % ckpt_every == 0 and step) or step == total_steps:
             t.save(step, bucket, model_dir,
-                #    aux={"Train_loader": train_dataset.get_state()},
                    init=False,
                    delete_old=step % keep_every != 0)
 
