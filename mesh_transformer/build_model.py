@@ -32,7 +32,8 @@ def build_model(params, version=1):
         optax.scale_by_adam(),
         additive_weight_decay(params["weight_decay"]),
         optax.scale(-1),
-        optax.scale_by_schedule(util.gpt3_schedule(params["warmup_steps"], params["anneal_steps"], params["lr"], params["end_lr"]))
+        # optax.scale_by_schedule(util.gpt3_schedule(params["warmup_steps"], params["anneal_steps"], params["lr"], params["end_lr"]))
+        optax.scale_by_schedule(util.constant_with_warmup(params["warmup_steps"], params["anneal_steps"], params["lr"], params["end_lr"]))
     )
     params["optimizer"] = opt
     # lsp 这里只是把参数传进去，还没有执行任何init操作

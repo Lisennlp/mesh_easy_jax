@@ -1,5 +1,5 @@
 {
-  "epoch_num": 20,
+  "epoch_num": 4,
   "save_optimizer_state": true,
   "embd_pdrop": 0.1,
   "resid_pdrop": 0.05,
@@ -16,25 +16,24 @@
   "seq": 2048,
   "cores_per_replica": 8,
   "per_replica_batch": 1,
-  "gradient_accumulation_steps": 16,
+  "gradient_accumulation_steps": 32,
   "seed": 42,
 
-  "warmup_steps": 3000,
-  "anneal_steps": 300000,
-  "lr": 1.2e-4,
+  "warmup_steps": 1431,
+  "anneal_steps": 71589,
+  "lr": 3e-6,
   "end_lr": 1.2e-5,
   "weight_decay": 0.1,
-  "total_steps": 100000,
+  "total_steps": 150000,
 
   "tpu_size": 32,
 
   "bucket": "llm_base_models",
   "model_dir": "llama7b_finetune_mesh_jax_flax",
 
-  "train_set": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
+  "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
   "val_set": {
-            "test1": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords",
-            "test2": "gs://llm_projects/data/general_new_format_tokenized_and_concatted.tfrecords"
+            "test": "dreamily_translation_general.test.tfrecords"
   },
 
   "val_batches": 100,
