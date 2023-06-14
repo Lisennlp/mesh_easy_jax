@@ -208,8 +208,9 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
-    warmup_steps = params["warmup_steps"]
     anneal_steps = params["anneal_steps"]
+    warmup_steps = params["warmup_ratio"] * anneal_steps
+
     lr = params["lr"]
     end_lr = params["end_lr"]
     weight_decay = params["weight_decay"]
