@@ -5,7 +5,7 @@
   "resid_pdrop": 0.05,
   "intermediate_size": 11008,
   "transformation": "pjit", 
-  "layers": 2,
+  "layers": 32,
   "d_model": 4096,
   "n_heads": 32,
   "n_vocab": 32000,
@@ -22,24 +22,24 @@
   "warmup_steps": 1431,
   "anneal_steps": 71589,
   "lr": 3e-6,
-  "end_lr": 1.2e-5,
-  "weight_decay": 0.1,
+  "end_lr": 3e-6,
+  "weight_decay": 0.001,
   "total_steps": 150000,
 
   "tpu_size": 32,
 
   "bucket": "llm_base_models",
-  "model_dir": "llama7b_finetune_mesh_jax_flax",
+  "model_dir": "easylm/linli_chinese_llama",
 
   "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
   "val_set": {
-            "test": "dreamily_translation_general.test.tfrecords"
+            "test": "gs://jax_llm_data/dreamily_translation_general.test.tfrecords"
   },
 
-  "val_batches": 100,
-  "val_every": 200,
-  "ckpt_every": 200,
-  "keep_every": 10000,
+  "val_batches": 2000,
+  "val_every": 4000,
+  "ckpt_every": 4000,
+  "keep_every": 4000,
 
   "name": "llama7b_finetune",
   "wandb_project": "mesh-transformer-jax"

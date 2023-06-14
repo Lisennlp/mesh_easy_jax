@@ -42,6 +42,7 @@ def search_newest_train_state(params):
         if 'step_' in blob.name:
             step = re.findall('step_(\d+)',blob.name)[0]
             model_dirs[int(step)] = blob.name
+    print(f'model_dirs: {model_dirs}')
     model_dirs = sorted(model_dirs.items(), key=lambda x: x[0])
     step, model_path = model_dirs[-1]
     if step > 0:
@@ -135,7 +136,7 @@ if __name__ == "__main__":
 
     val_sets = {}
     for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=eopch_num)
+        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=int(2.5 * eopch_num))
 
     start = time.time()
     t.train(next(train_dataset))
@@ -146,8 +147,8 @@ if __name__ == "__main__":
         t.eval(next(val_set))
     print(f"Eval fn compiled in {time.time() - start:.06}s")
 
-    project = params.get("wandb_project", "mesh-transformer-jax")
-    wandb.init(project=project, name=params["name"], config=params)
+    project = params.get("wandb_project", "Linli-chinese-llama-finetune")
+    wandb.init(project=project, name=params["name"], config=params, resume=True)
     skip_step = params['skip_step']
     print(f'skip_step: {skip_step}')
     step = 0
