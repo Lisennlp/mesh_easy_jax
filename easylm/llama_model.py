@@ -942,7 +942,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
                 params, input_token, deterministic=False,
-                # rngs=rng_generator(self.config.rng_keys),
                 rngs=rngs
             ).logits
             return cross_entropy_loss_and_accuracy(
@@ -1118,9 +1117,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def train(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
         rng_generator = JaxRNG(self.rng)
-        rng = rng_generator(self.config.rng_keys)
+        rngs = rng_generator(self.config.rng_keys)
         self.rng = rng_generator()
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks, rng)
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks, rngs)
         return loss, acc
     
     def eval(self, sample):
