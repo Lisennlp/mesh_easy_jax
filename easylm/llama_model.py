@@ -931,9 +931,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
-    def train_step(self, train_state, input_tokens, target_tokens, masks):
-        rng = next_rng()
-        rng_generator = JaxRNG(rng)
+    def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
         print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
         if masks is not None:
             print(f'masks: {masks.shape}')
@@ -944,7 +942,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
                 params, input_token, deterministic=False,
-                rngs=rng_generator(self.config.rng_keys),
+                # rngs=rng_generator(self.config.rng_keys),
+                rngs=rngs
             ).logits
             return cross_entropy_loss_and_accuracy(
                 logits, target_token, valid=mask)
@@ -1052,7 +1051,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     donate_argnums=(0, ),
                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp'), PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
@@ -1081,7 +1080,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("dp", dp)
         head_print("mp", mp)
         self.gen_length = 1
-        _key = next_rng()
+        self.rng = next_rng()
 
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
@@ -1112,13 +1111,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')
-            self.state = self.init_(_key)
+            self.state = self.init_(self.rng)
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         
     def train(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks)
+        rng_generator = JaxRNG(self.rng)
+        rng = rng_generator(self.config.rng_keys)
+        self.rng = rng_generator()
+        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks, rng)
         return loss, acc
     
     def eval(self, sample):
