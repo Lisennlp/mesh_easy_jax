@@ -7,7 +7,7 @@ download
 *.log
 *.csv
 *.swp
-*.ipynb
+# *.ipynb
 __pycache__
 commit.sh
 wandb
