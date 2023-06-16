@@ -42,10 +42,11 @@ from easylm.jax_utils import (
 )
 import optax
 from easylm.jax_utils import (
-    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
+    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy, tree_apply
 )
 from easylm.checkpoint import StreamingCheckpointer
-
+import orbax
+from orbax import checkpoint
 
 
 LLAMA_STANDARD_CONFIGS = {
@@ -1031,7 +1032,18 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                 )
             elif k == 'params' and isinstance(v, dict):
                 self.state[k] = FrozenDict(v)
-        
+
+    def orbax_async_checkpointer(self, model_dir):
+        # model_dir = 'gs://llm_base_models/easylm/'
+        # if jax.process_index() == 0:
+        self.mngr = self.config.save
+        lastest_step = self.mngr.latest_step()
+        print(f'latest step: {lastest_step}')
+        self.state = self.mngr.restore(lastest_step)
+        print(f'self.state: {self.state.keys()}')
+        print(f'shrad keys: {self.shard_fns["params"]}')
+        self.state = tree_apply(self.shard_fns['params'], FrozenDict(self.state))
+            
     def init_state(self):
         self.config = LLaMAConfig(**self.config)
         set_random_seed(self.config.seed)
@@ -1084,30 +1096,38 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
+        
 
         if self.config.load_checkpoint:
             start = time.time()
             print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
-            if 'train_state' in self.config.load_checkpoint:
-                print(f'Loading train_state')
-                self.state, _ = self.checkpointer.load_trainstate_checkpoint(
-                                                                            load_from=self.config.load_checkpoint, 
-                                                                            trainstate_target=None,
-                                                                            trainstate_shard_fns=self.shard_fns
-                                                                            )
-                # 为什么要进行恢复参数，因为self.train_的pjit编译的时候，对self.state进行的donate（加入缓冲区）节省内存，加快速度。
-                self.recovery_train_state()
+            if self.config.save_mode == 'orbax':
+                print(f'save_mode1: {self.config.save_mode}')
+                # init orbax async checkpointer and load latest checkpoint
+                self.orbax_async_checkpointer(self.config.load_checkpoint)
+
             else:
-                print(f'Loading params')
-                _, restored_params = self.checkpointer.load_trainstate_checkpoint(
-                                                                            load_from=self.config.load_checkpoint, 
-                                                                            trainstate_target=train_state_shapes['params'],
-                                                                            trainstate_shard_fns=self.shard_fns['params']
-                                                                            )
-                self.state = self.init_from_params(restored_params)
-                del restored_params
-                jax.lib.xla_bridge.get_backend().defragment()
-            print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
+                print(f'save_mode2: {self.config.save_mode}')
+                if 'train_state' in self.config.load_checkpoint:
+                    print(f'Loading train_state')
+                    self.state, _ = self.checkpointer.load_trainstate_checkpoint(
+                                                                                load_from=self.config.load_checkpoint, 
+                                                                                trainstate_target=None,
+                                                                                trainstate_shard_fns=self.shard_fns
+                                                                                )
+                    # 为什么要进行恢复参数，因为self.train_的pjit编译的时候，对self.state进行的donate（加入缓冲区）节省内存，加快速度。
+                    self.recovery_train_state()
+                else:
+                    print(f'Loading params')
+                    _, restored_params = self.checkpointer.load_trainstate_checkpoint(
+                                                                                load_from=self.config.load_checkpoint, 
+                                                                                trainstate_target=train_state_shapes['params'],
+                                                                                trainstate_shard_fns=self.shard_fns['params']
+                                                                                )
+                    self.state = self.init_from_params(restored_params)
+                    del restored_params
+                    jax.lib.xla_bridge.get_backend().defragment()
+                print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')
             self.state = self.init_(self.rng)
@@ -1130,7 +1150,15 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def write_ckpt(self, path=None, shard=None):
         start = time.time()
         print(f'Start to save model: ‘{path}’')
-        self.checkpointer.save_all(self.state, self.gather_fns, model_dir=path)
+        if self.config.save_mode == 'orbax':
+            if jax.process_index() == 0:
+                self.mngr.save(self.state['step'].item(), self.state)
+            else:
+                print(f'process_index: {jax.process_index()} waiting 30s')
+                time.sleep(10)
+            # mngr.wait_until_finished()
+        else:
+            self.checkpointer.save_all(self.state, self.gather_fns, model_dir=path)
         print(f'Model save finished. take time: {time.time() - start}')
 
     def __call__(

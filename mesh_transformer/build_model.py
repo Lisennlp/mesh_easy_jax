@@ -10,6 +10,8 @@ from mesh_transformer.transformer_shard import CausalTransformer, CausalTransfor
 from mesh_transformer.util import additive_weight_decay
 from easylm.llama_model import FlaxLLaMAForCausalLMModule
 
+import orbax
+from orbax import checkpoint
 
 def build_model(params, version=1):
     cores_per_replica = params["cores_per_replica"]
@@ -48,6 +50,7 @@ def build_model(params, version=1):
         optax.scale_by_schedule(scheduler)
     )
     params["optimizer"] = opt
+
     # lsp 这里只是把参数传进去，还没有执行任何init操作
     if version == 2:
         model_fn = functools.partial(CausalTransformerV2, params)

@@ -4,6 +4,7 @@ import time
 import os
 import re
 from collections import defaultdict
+import subprocess
 
 import numpy as np
 import wandb
@@ -22,6 +23,7 @@ import jax
 from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
+
 
 jax.config.update('jax_array', True)
 tf.config.experimental.set_visible_devices([], "GPU")
@@ -52,9 +54,23 @@ def search_newest_train_state(params):
         model_path = f'params::gs://{bucket_name}/{model_path}'
     return step, model_path
 
+def search_newest_step_orbax(params):
+    model_dir = f'gs://{params["bucket"]}/{params["model_dir"]}'
+    response = subprocess.run('gsutil ls gs://llm_base_models/orbax_async_easylm', stdout=subprocess.PIPE, shell=True)
+    step_map_path = {}
+    for path in response.stdout.decode('utf-8').split('\n'):
+        step = re.findall('\d+', path)
+        if step:
+            step_map_path[int(step[0])] = path
+    step_map_path = sorted(step_map_path.items())
+    return step_map_path[-1]
 
 def update_llama_params(params):
-    params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
+    if params['save_mode'] == 'orbax':
+        params['skip_step'], params['load_checkpoint'] = search_newest_step_orbax(params)
+    else:
+        params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
+
     print(f'load_checkpoint: {params["load_checkpoint"]}')
     # params['vocab_file'] = '/home/lishengping/models/trans_belle_7b/tokenizer.model'
     params['num_hidden_layers'] = params.get('layers', 32)
