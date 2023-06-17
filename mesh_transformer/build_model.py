@@ -18,7 +18,7 @@ def build_model(params, version=1):
     assert cores_per_replica == 8
     tpu_size = params["tpu_size"]
     host_count = tpu_size // cores_per_replica
-    assert tpu_size in [8, 32, 128, 256, 512]
+    assert tpu_size in [8, 32, 64, 128, 256, 512]
 
     head_info = ray.init()
     address = head_info['redis_address'] if head_info.get('redis_address') else head_info['address']

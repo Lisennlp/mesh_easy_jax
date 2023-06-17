@@ -205,7 +205,7 @@ if __name__ == "__main__":
             wandb.log(eval_task_dict, step)
         step += 1
 
-        steps_per_sec = step / (time.time() - start)
+        steps_per_sec = (step - skip_step) / (time.time() - start)
         tokens_per_sec = tokens_per_step * steps_per_sec
         sequences_processed = sequences_per_step * step
         tokens_processed = tokens_per_step * step

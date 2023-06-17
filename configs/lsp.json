@@ -16,7 +16,7 @@
   "seq": 2048,
   "cores_per_replica": 8,
   "per_replica_batch": 1,
-  "gradient_accumulation_steps": 32,
+  "gradient_accumulation_steps": 16,
   "seed": 42,
 
   "epoch_num": 3,
@@ -27,7 +27,7 @@
   "weight_decay": 0.001,
   "warmup_ratio": 0.02,
 
-  "tpu_size": 32,
+  "tpu_size": 64,
 
   "bucket": "llm_base_models",
   "model_dir": "easylm/linli_chinese_llama",
@@ -37,10 +37,10 @@
             "test": "gs://jax_llm_data/dreamily_translation_general.test.tfrecords"
   },
 
-  "val_batches": 1000,
-  "val_every": 1500,
-  "ckpt_every": 1500,
-  "keep_every": 1500,
+  "val_batches": 2000,
+  "val_every": 3000,
+  "ckpt_every": 3000,
+  "keep_every": 3000,
 
   "name": "llama7b_finetune",
   "wandb_project": "Linli-chinese-llama-finetune"
