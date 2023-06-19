@@ -39,20 +39,18 @@ def search_newest_train_state(params):
     directory_path = params['model_dir']
 
     client = storage.Client()
-    model_dirs = {}
+    model_dirs = defaultdict(list)
     for blob in client.list_blobs(bucket_name, prefix=directory_path):
         if 'step_' in blob.name:
             step = re.findall('step_(\d+)',blob.name)[0]
-            model_dirs[int(step)] = blob.name
+            if int(step) > 100:
+                continue
+            model_dirs[int(step)].append(blob.name)
     print(f'model_dirs: {model_dirs}')
     model_dirs = sorted(model_dirs.items(), key=lambda x: x[0])
-    step, model_path = model_dirs[-1]
-    if step > 0:
-        model_path = f'trainstate::gs://{bucket_name}/{model_path}'
-        assert 'train_state' in model_path
-    else:
-        model_path = f'params::gs://{bucket_name}/{model_path}'
-    return step, model_path
+    step, model_dir = model_dirs[-1]
+    model_paths = [f'trainstate::gs://{bucket_name}/{model_path}' if step > 0 else f'params::gs://{bucket_name}/{model_path}' for model_path in model_dir]
+    return step, model_paths
 
 def search_newest_step_orbax(params):
     model_dir = f'gs://{params["bucket"]}/{params["model_dir"]}'

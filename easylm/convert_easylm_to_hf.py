@@ -237,7 +237,7 @@ if __name__ == "__main__":
     mlxu.run(main)
 
 
-# python EasyLM/models/llama/convert_easylm_to_hf.py     \
+# python easylm/convert_easylm_to_hf.py     \
 #  --load_checkpoint trainstate::/nas2/lishengping/other_models/Linly_finetune_7b/step_24000/streaming_train_state   \
 #  --output_dir /nas2/lishengping/other_models/Linly_finetune_7b/step_24000/hf/     \
 #  --model_size 7b     \

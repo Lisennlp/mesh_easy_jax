@@ -1108,7 +1108,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
             else:
                 print(f'save_mode2: {self.config.save_mode}')
-                if 'train_state' in self.config.load_checkpoint:
+                if 'train_state' in self.config.load_checkpoint[0]:
                     print(f'Loading train_state')
                     self.state, _ = self.checkpointer.load_trainstate_checkpoint(
                                                                                 load_from=self.config.load_checkpoint, 

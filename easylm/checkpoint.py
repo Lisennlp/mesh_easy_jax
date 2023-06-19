@@ -43,11 +43,29 @@ class StreamingCheckpointer(object):
             任何位置，无法进行后续的加载或检索。这通常是一个无效的保存操作，可能是
             由于错误或意外的设置导致的。
         """
-        if not self.enable:
-            path = '/dev/null'
+        # if not self.enable:
+        #     path = '/dev/null'
         self.save_train_state_to_file(
             train_state, path, gather_fns, self.config.float_dtype
         )
+
+    # @staticmethod
+    # def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
+    #     """if jax.process_index() == 0:  -> 不需要，通过self.enable进行判断"""
+    #     print(f'Model save path: {path}')
+    #     train_state = to_state_dict(train_state)
+    #     packer = msgpack.Packer()
+    #     flattend_train_state = flatten_dict(train_state)
+    #     if gather_fns is not None:
+    #         gather_fns = flatten_dict(to_state_dict(gather_fns))
+    #     if not path.startswith('gs'):
+    #         print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
+    #     with mlxu.open_file(path, "wb") as fout:
+    #         for key, value in flattend_train_state.items():
+    #             if gather_fns is not None:
+    #                 value = gather_fns[key](value)
+    #             value = float_tensor_to_dtype(value, float_dtype)
+    #             fout.write(packer.pack((key, to_bytes(value))))
 
     @staticmethod
     def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
@@ -60,8 +78,27 @@ class StreamingCheckpointer(object):
             gather_fns = flatten_dict(to_state_dict(gather_fns))
         if not path.startswith('gs'):
             print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
+        if jax.process_index() == 0:
+            path += '.mu'
+        elif jax.process_index() == 1:
+            path += '.nu'
+        elif jax.process_index() == 2:
+            path += '.params'
+        else:
+            path = '/dev/null'
+
+        print(f'process_id: {jax.process_index()} path: {path}')
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
+                if jax.process_index() == 0:
+                    if not ('opt_state' in key and 'mu' in key or 'count' in key):
+                        continue
+                elif jax.process_index() == 1:
+                    if not ('opt_state' in key and 'nu' in key):
+                        continue
+                elif jax.process_index() >= 2:
+                    if 'opt_state' in key:
+                        continue
                 if gather_fns is not None:
                     value = gather_fns[key](value)
                 value = float_tensor_to_dtype(value, float_dtype)
@@ -101,21 +138,23 @@ class StreamingCheckpointer(object):
         if remove_dict_prefix is not None:
             remove_dict_prefix = tuple(remove_dict_prefix)
         flattend_train_state = {}
-        with mlxu.open_file(path) as fin:
-            # 83886080 bytes = 80 MB, which is 16 blocks on GCS
-            unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
-            for key, value in unpacker:
-                key = tuple(key)
-                if remove_dict_prefix is not None:
-                    if key[:len(remove_dict_prefix)] == remove_dict_prefix:
-                        key = key[len(remove_dict_prefix):]
-                    else:
-                        continue
-
-                tensor = from_bytes(None, value)
-                if shard_fns is not None:
-                    tensor = shard_fns[key](tensor)
-                flattend_train_state[key] = tensor
+        if not isinstance(path, list):
+            path = [path]
+        for p in path:
+            with mlxu.open_file(p) as fin:
+                # 83886080 bytes = 80 MB, which is 16 blocks on GCS
+                unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
+                for key, value in unpacker:
+                    key = tuple(key)
+                    if remove_dict_prefix is not None:
+                        if key[:len(remove_dict_prefix)] == remove_dict_prefix:
+                            key = key[len(remove_dict_prefix):]
+                        else:
+                            continue
+                    tensor = from_bytes(None, value)
+                    if shard_fns is not None:
+                        tensor = shard_fns[key](tensor)
+                    flattend_train_state[key] = tensor
 
         if target is not None:
             flattened_target = flatten_dict(
@@ -173,7 +212,8 @@ class StreamingCheckpointer(object):
         else:
             params_shard_fns = None
 
-        load_type, load_path = load_from.split('::', 1)
+        load_type = load_from[0].split('::', 1)[0]
+        load_path = [p.split('::', 1)[1] for p in load_from]
         if disallow_trainstate:
             assert load_type != 'trainstate', 'Loading full trainstate is not allowed!'
         train_state = None
