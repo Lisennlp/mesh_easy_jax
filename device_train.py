@@ -203,8 +203,8 @@ if __name__ == "__main__":
                 step += 1
                 continue
             loss, acc = model.train(build_sample(input_data))
-            loss = loss.mean()
-            acc = acc.mean()
+            loss = loss.mean().item()
+            acc = acc.mean().item()
             if (step % ckpt_every == 0 and step) or step == total_steps:
                 save_path = f"gs://{bucket}/{model_dir}/step_{step}/"
                 model.write_ckpt(save_path)
@@ -227,8 +227,8 @@ if __name__ == "__main__":
                     val_loss = np.array(val_loss).mean()
                     val_acc = np.array(val_acc).mean()
 
-                    eval_task_dict[val_name]['loss'] = val_loss
-                    eval_task_dict[val_name]['acc'] = val_acc
+                    eval_task_dict[val_name]['loss'] = val_loss.item()
+                    eval_task_dict[val_name]['acc'] = val_acc.item()
 
                     print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
 
