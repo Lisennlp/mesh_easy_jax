@@ -25,6 +25,7 @@ from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
 from jax.experimental import PartitionSpec as P
+from praxis import py_utils
 
 
 # jax.config.update('jax_array', True)
@@ -156,6 +157,7 @@ if __name__ == "__main__":
     print(f'version: {args.version}\nparams: {params}')
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
+
     devices = np.array(jax.devices()).reshape(per_replica_batch * tpu_size // cores_per_replica, cores_per_replica)
     mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
     print(f'mesh: {mesh}')
@@ -165,6 +167,7 @@ if __name__ == "__main__":
     skip_step = params['skip_step']
     print(f'skip_step: {skip_step}')
     host_count = tpu_size // cores_per_replica
+
     with mesh:
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
         print(f'train_batch_size: {train_batch_size}')
@@ -196,6 +199,7 @@ if __name__ == "__main__":
         step = 0
         print(f'host_count: {host_count} process id: {jax.process_index()}')
         data_count = 0
+        # py_utils.sync_global_devices('Train start.......')
         while True:
             input_data = next(train_dataset)
             if data_count % host_count != jax.process_index():
@@ -253,3 +257,5 @@ if __name__ == "__main__":
                 }
             print(f'step: {step}: {wandb_stats}')
             # wandb.log(wandb_stats, step)
+        py_utils.sync_global_devices('Train finished.......')
+        
