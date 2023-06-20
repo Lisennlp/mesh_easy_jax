@@ -114,7 +114,7 @@ def build_sample(data, mesh):
         "target": d[:, :, 1:],
         "masks": m[:, :, 1:],
         }
-    sample = host_local_array_to_global_array(sample, mesh, P(None, 'dp'))
+    sample = host_local_array_to_global_array(sample, mesh, P(None, ('dp', 'fsdp')))
     return sample
 
 
@@ -156,9 +156,11 @@ if __name__ == "__main__":
     print(f'version: {args.version}\nparams: {params}')
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
-    devices = np.array(jax.devices()).reshape(int(per_replica_batch), int(cores_per_replica))
+    # devices = np.array(jax.devices()).reshape(int(per_replica_batch), -1, int(cores_per_replica))
+    devices = np.array(jax.devices()).reshape(1, 2, 4)
+
     print(f'devices: {devices}')
-    mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
+    mesh = jax.sharding.Mesh(devices, ('dp', 'fsdp', 'mp'))
     print(f'mesh: {mesh}')
 
     # project = params.get("wandb_project", "Linli-chinese-llama-finetune")
@@ -195,10 +197,9 @@ if __name__ == "__main__":
         print(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
         step = 0
+        start = time.time()
         while True:
             input_data = next(train_dataset)
-            if step % host_count != jax.process_index():
-                continue
             if step <= skip_step:
                 step += 1
                 continue

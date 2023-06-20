@@ -41,9 +41,7 @@ from easylm.jax_utils import (
     make_shard_and_gather_fns, with_sharding_constraint
 )
 import optax
-from easylm.jax_utils import (
-    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy, tree_apply
-)
+from easylm.jax_utils import (get_jax_mesh, get_gradient_checkpoint_policy, tree_apply)
 from easylm.checkpoint import StreamingCheckpointer
 import orbax
 from orbax import checkpoint
@@ -134,20 +132,20 @@ class LLaMAConfig(object):
     def get_partition_rules():
         return (
             # embeddings
-            ("transformer/wte/embedding", PS("mp", None)),
+            ("transformer/wte/embedding", PS("mp", "fsdp")),
             # atention
-            ("attention/(wq|wk|wv)/kernel", PS(None, "mp")),
-            ("attention/wo/kernel", PS("mp", None)),
+            ("attention/(wq|wk|wv)/kernel", PS("fsdp", "mp")),
+            ("attention/wo/kernel", PS("mp", "fsdp")),
             # mlp
-            ("feed_forward/w1/kernel", PS(None, "mp")),
-            ("feed_forward/w2/kernel", PS("mp", None)),
-            ("feed_forward/w3/kernel", PS(None, "mp")),
+            ("feed_forward/w1/kernel", PS("fsdp", "mp")),
+            ("feed_forward/w2/kernel", PS("mp", "fsdp")),
+            ("feed_forward/w3/kernel", PS("fsdp", "mp")),
             # layer norms
             ("attention_norm/kernel", PS(None)),
             ("ffn_norm/kernel", PS(None)),
             # output head
             ("transformer/ln_f/kernel", PS(None)),
-            ("lm_head/kernel", PS(None, "mp")),
+            ("lm_head/kernel", PS("fsdp", "mp")),
             ('.*', PS(None)),
         )
 
@@ -452,7 +450,7 @@ class FlaxLLaMAAttention(nn.Module):
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
-        xq = with_sharding_constraint(xq, PS("dp", None, "mp"))
+        xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
         xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
         xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
 
@@ -1062,12 +1060,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     donate_argnums=(0, ),
                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp'), PS()),
+                          in_shardings=(train_state_partition, PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
         self.eval_ = pjit(self.eval_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+                          in_shardings=(train_state_partition, PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp'))),
                           out_shardings=(PS(), PS()),
                         #   donate_argnums=(0, ),
                                 )
@@ -1075,21 +1073,19 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
         key = hk.PRNGSequence(42)
-        assert thread_resources.env.shape['mp'] == self.config.cores_per_replica
         dp = thread_resources.env.shape['dp']
+        fsdp = thread_resources.env.shape['fsdp']
         mp = thread_resources.env.shape['mp']
         mp_per_host = min(mp, 8)
         seq = self.config.seq
         vocab = self.config.vocab_size
         print('init state============')
-        print(f'jax.host_count(): {jax.process_count()}')
-
+        print(f'host count: {jax.process_count()}')
         example_shape = (max(dp, 1), seq,)
         print(f'example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
         head_print("in shape", x.shape)
-        head_print("dp", dp)
-        head_print("mp", mp)
+        head_print(f'dp: {dp}, fsdp: {fsdp}, mp: {mp}')
         self.gen_length = 1
         self.rng = next_rng()
 
