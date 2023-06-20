@@ -120,7 +120,7 @@ def build_sample(data, mesh):
 
 if __name__ == "__main__":
     # node必须删除
-    # multiprocessing.set_start_method("spawn")
+    multiprocessing.set_start_method("spawn")
     args = parse_args()
     params = json.load(open(args.config, 'r'))
 
@@ -156,8 +156,7 @@ if __name__ == "__main__":
     print(f'version: {args.version}\nparams: {params}')
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
-    devices = np.array(jax.devices()).reshape(int(per_replica_batch), int(cores_per_replica))
-    print(f'devices: {devices}')
+    devices = np.array(jax.devices()).reshape(per_replica_batch * tpu_size // cores_per_replica, cores_per_replica)
     mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
     print(f'mesh: {mesh}')
 
@@ -167,10 +166,10 @@ if __name__ == "__main__":
     print(f'skip_step: {skip_step}')
     host_count = tpu_size // cores_per_replica
     with mesh:
-        train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
+        train_batch_size = (gradient_accumulation_steps, per_replica_batch)
         print(f'train_batch_size: {train_batch_size}')
         train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
-        global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
+        global_val_batch = int(per_replica_batch * params.get("val_batch_multiplier", 1))
         sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
         tokens_per_step = params['seq'] * sequences_per_step
         val_sets = {}
@@ -195,16 +194,19 @@ if __name__ == "__main__":
         print(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
         step = 0
+        print(f'host_count: {host_count} process id: {jax.process_index()}')
+        data_count = 0
         while True:
             input_data = next(train_dataset)
-            if step % host_count != jax.process_index():
+            if data_count % host_count != jax.process_index():
+                data_count += 1
                 continue
             if step <= skip_step:
                 step += 1
                 continue
             loss, acc = model.train(build_sample(input_data, mesh=mesh))
-            loss = loss.mean().item()
-            acc = acc.mean().item()
+            loss = loss.item()
+            acc = acc.item()
             if (step % ckpt_every == 0 and step) or step == total_steps:
                 save_path = f"gs://{bucket}/{model_dir}/step_{step}/"
                 model.write_ckpt(save_path)
@@ -219,8 +221,8 @@ if __name__ == "__main__":
                     val_start = time.time()
                     for _ in range(val_batches):
                         loss, acc = model.eval(build_sample(next(val_set), mesh=mesh))
-                        loss = loss.mean()
-                        acc = acc.mean()
+                        loss = loss.item()
+                        acc = acc.item()
                         val_loss.append(loss)
                         val_acc.append(acc)
                     
