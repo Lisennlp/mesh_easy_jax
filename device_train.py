@@ -25,12 +25,12 @@ from easylm.llama_model import (
 )
 
 
-jax.config.update('jax_array', True)
+# jax.config.update('jax_array', True)
 tf.config.experimental.set_visible_devices([], "GPU")
-os.environ['JAX_PLATFORMS'] = ''
-os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
+# os.environ['JAX_PLATFORMS'] = ''
+# os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
-wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
+# wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 
 
 def search_newest_train_state(params, debug=False):
@@ -48,9 +48,10 @@ def search_newest_train_state(params, debug=False):
             model_dirs[int(step)].append(blob.name)
     print(f'model_dirs: {model_dirs}')
     model_dirs = sorted(model_dirs.items(), key=lambda x: x[0])
-    step, model_dir = model_dirs[-1]
-    model_paths = [f'trainstate::gs://{bucket_name}/{model_path}' if step > 0 else f'params::gs://{bucket_name}/{model_path}' for model_path in model_dir]
-    if debug:
+    if model_dirs:
+        step, model_dir = model_dirs[-1]
+        model_paths = [f'trainstate::gs://{bucket_name}/{model_path}' if step > 0 else f'params::gs://{bucket_name}/{model_path}' for model_path in model_dir]
+    else:
         step, model_paths = 0, []
     return step, model_paths
 
@@ -105,7 +106,7 @@ def parse_args():
 
 
 def build_sample(data):
-    masks = data['labels'] > 0
+    m = data['labels'] > 0
     d = data['input_ids']
     sample = {
          "obs": d[:, :, :-1],
@@ -119,8 +120,8 @@ def build_sample(data):
 
 if __name__ == "__main__":
     # huggingface tokenizers gets very angry if you fork
-    multiprocessing.set_start_method("spawn")
-
+    # node必须删除
+    # multiprocessing.set_start_method("spawn")
     args = parse_args()
     params = json.load(open(args.config, 'r'))
 
@@ -156,84 +157,97 @@ if __name__ == "__main__":
     print(f'version: {args.version}\nparams: {params}')
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
-    start = time.time()
-    model = build_model(params, version=args.version, ray=False)
-    model.init_state()
-    print(f'init state time: {time.time() - start}')
-    
-    train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
-    print(f'train_batch_size: {train_batch_size}')
-    train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
-    global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
-    sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
-    tokens_per_step = params['seq'] * sequences_per_step
+    devices = np.array(jax.devices()).reshape(int(per_replica_batch), int(cores_per_replica))
+    print(f'devices: {devices}')
+    mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
+    print(f'mesh: {mesh}')
 
-    val_sets = {}
-    for k, v in params['val_set'].items():
-        val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=int(2.5 * eopch_num))
-
-    start = time.time()
-    # 编译
-    model.train(build_sample(next(train_dataset)))
-    print(f"Train fn compiled in {time.time() - start:.06}s")
-
-    start = time.time()
-    for val_set in val_sets.values():
-        model.eval(build_sample(next(val_set)))
-    print(f"Eval fn compiled in {time.time() - start:.06}s")
-
-    project = params.get("wandb_project", "Linli-chinese-llama-finetune")
-    wandb.init(project=project, name=params["name"], config=params, resume=True)
+    # project = params.get("wandb_project", "Linli-chinese-llama-finetune")
+    # wandb.init(project=project, name=params["name"], config=params, resume=True)
     skip_step = params['skip_step']
     print(f'skip_step: {skip_step}')
-    step = 0
-    while True:
-        input_data = next(train_dataset)
-        if step <= skip_step:
+
+    with mesh:
+        train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
+        print(f'train_batch_size: {train_batch_size}')
+        train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
+        global_val_batch = int(per_replica_batch * tpu_size // cores_per_replica * params.get("val_batch_multiplier", 1))
+        sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
+        tokens_per_step = params['seq'] * sequences_per_step
+        val_sets = {}
+        for k, v in params['val_set'].items():
+            val_sets[k] = load_tfrecord_dataset(f"{v}", batch_size=(1, global_val_batch), seq_len=params['seq'], repeat=int(2.5 * eopch_num))
+
+        # ==== init =====
+        start = time.time()
+        t = build_model(params, version=args.version, ray=False)
+        model = t()
+        model.init_state()
+        print(f'init state time: {time.time() - start}')
+
+        start = time.time()
+        # train complie
+        model.train(build_sample(next(train_dataset)))
+        print(f"Train fn compiled in {time.time() - start:.06}s")
+        start = time.time()
+        # eval complie
+        for val_set in val_sets.values():
+            model.eval(build_sample(next(val_set)))
+        print(f"Eval fn compiled in {time.time() - start:.06}s")
+
+        # start train
+        step = 0
+        while True:
+            input_data = next(train_dataset)
+            if step <= skip_step:
+                step += 1
+                continue
+            loss, acc = model.train(build_sample(input_data))
+            loss = loss.mean()
+            acc = acc.mean()
+            if (step % ckpt_every == 0 and step) or step == total_steps:
+                save_path = f"gs://{bucket}/{model_dir}/step_{step}/"
+                model.write_ckpt(save_path)
+                if step == total_steps:
+                    print("Training completed!")
+                    exit()
+
+            if step % val_every == 0:
+                eval_task_dict = defaultdict(dict)
+                for val_name, val_set in val_sets.items():
+                    val_loss, val_acc = [], []
+                    val_start = time.time()
+                    for _ in range(val_batches):
+                        loss, acc = model.eval(build_sample(next(val_set)))
+                        loss = loss.mean()
+                        acc = acc.mean()
+                        val_loss.append(loss)
+                        val_acc.append(acc)
+                    
+                    val_loss = np.array(val_loss).mean()
+                    val_acc = np.array(val_acc).mean()
+
+                    eval_task_dict[val_name]['loss'] = val_loss
+                    eval_task_dict[val_name]['acc'] = val_acc
+
+                    print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
+
+                print(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
+                # wandb.log(eval_task_dict, step)
             step += 1
-            continue
-        loss, acc = model.train(build_sample(input_data))
-        if (step % ckpt_every == 0 and step) or step == total_steps:
-            save_path = f"gs://{bucket}/{model_dir}/step_{step}/"
-            model.write_ckpt(save_path)
-            if step == total_steps:
-                print("Training completed!")
-                exit()
 
-        if step % val_every == 0:
-            eval_task_dict = defaultdict(dict)
-            for val_name, val_set in val_sets.items():
-                val_loss, val_acc = [], []
-                val_start = time.time()
-                for _ in range(val_batches):
-                    loss, acc = model.eval(build_sample(next(val_set)))
-                    val_loss.append(loss)
-                    val_acc.append(acc)
-                
-                val_loss = np.array(val_loss).mean()
-                val_acc = np.array(val_acc).mean()
+            steps_per_sec = (step - skip_step) / (time.time() - start)
+            tokens_per_sec = tokens_per_step * steps_per_sec
+            sequences_processed = sequences_per_step * step
+            tokens_processed = tokens_per_step * step
 
-                eval_task_dict[val_name]['loss'] = val_loss
-                eval_task_dict[val_name]['acc'] = val_acc
-
-                print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc}")
-
-            print(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
-            wandb.log(eval_task_dict, step)
-        step += 1
-
-        steps_per_sec = (step - skip_step) / (time.time() - start)
-        tokens_per_sec = tokens_per_step * steps_per_sec
-        sequences_processed = sequences_per_step * step
-        tokens_processed = tokens_per_step * step
-
-        wandb_stats = {
-                "train/loss": loss,
-                "train/acc": acc,
-                "train/steps_per_sec": steps_per_sec,
-                "train/tokens_per_sec": tokens_per_sec,
-                "sequences_processed": sequences_processed,
-                "tokens_processed": tokens_processed,
-            }
-        print(f'step: {step}: {wandb_stats}')
-        wandb.log(wandb_stats, step)
+            wandb_stats = {
+                    "train/loss": loss,
+                    "train/acc": acc,
+                    "train/steps_per_sec": steps_per_sec,
+                    "train/tokens_per_sec": tokens_per_sec,
+                    "sequences_processed": sequences_processed,
+                    "tokens_processed": tokens_processed,
+                }
+            print(f'step: {step}: {wandb_stats}')
+            # wandb.log(wandb_stats, step)
