@@ -192,7 +192,6 @@ if __name__ == "__main__":
         # train complie
         model.train(build_sample(next(train_dataset), mesh=mesh))
         print(f"Train fn compiled in {time.time() - start:.06}s")
-        start = time.time()
         # eval complie
         for val_set in val_sets.values():
             model.eval(build_sample(next(val_set), mesh=mesh))
@@ -201,6 +200,7 @@ if __name__ == "__main__":
         step = 0
         print(f'host_count: {host_count} process id: {jax.process_index()}')
         data_count = 0
+        start = time.time()
         while True:
             input_data = next(train_dataset)
             if data_count % host_count != jax.process_index():
