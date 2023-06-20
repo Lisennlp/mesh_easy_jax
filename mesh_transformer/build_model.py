@@ -13,16 +13,17 @@ from easylm.llama_model import FlaxLLaMAForCausalLMModule
 import orbax
 from orbax import checkpoint
 
-def build_model(params, version=1):
+def build_model(params, version=1, ray=True):
     cores_per_replica = params["cores_per_replica"]
     assert cores_per_replica == 8
     tpu_size = params["tpu_size"]
     host_count = tpu_size // cores_per_replica
     assert tpu_size in [8, 32, 64, 128, 256, 512]
 
-    head_info = ray.init()
-    address = head_info['redis_address'] if head_info.get('redis_address') else head_info['address']
-    print(f'address: {address}')
+    if ray:
+        head_info = ray.init()
+        address = head_info['redis_address'] if head_info.get('redis_address') else head_info['address']
+        print(f'address: {address}')
 
     # warmup_cosine_decay_schedule
     scheduler = optax.warmup_cosine_decay_schedule(
@@ -60,7 +61,9 @@ def build_model(params, version=1):
         model_fn = functools.partial(FlaxLLaMAForCausalLMModule, params, dtype=jnp.bfloat16)
     else:
         raise Exception(f"Version {version} does not exist")
-
-    t = TPUCluster((tpu_size // cores_per_replica, cores_per_replica), host_count, model_fn, version=version)
+    if ray:
+        t = TPUCluster((tpu_size // cores_per_replica, cores_per_replica), host_count, model_fn, version=version)
+    else:
+        t = model_fn
     return t
 
