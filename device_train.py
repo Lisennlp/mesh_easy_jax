@@ -9,6 +9,7 @@ import subprocess
 import numpy as np
 import wandb
 from tqdm import tqdm
+from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
 
 from mesh_transformer.build_model import build_model
 from lm_eval import evaluator, tasks
@@ -113,6 +114,7 @@ def build_sample(data):
         "target": d[:, :, 1:],
         "masks": m[:, :, 1:],
         }
+    sample = host_local_array_to_global_array(sample)
     return sample
     # loss, acc = model.train(sample)
     # return np.array(loss).mean(), np.array(acc).mean()
@@ -166,7 +168,7 @@ if __name__ == "__main__":
     # wandb.init(project=project, name=params["name"], config=params, resume=True)
     skip_step = params['skip_step']
     print(f'skip_step: {skip_step}')
-
+    host_count = tpu_size // cores_per_replica
     with mesh:
         train_batch_size = (gradient_accumulation_steps, per_replica_batch * tpu_size // cores_per_replica)
         print(f'train_batch_size: {train_batch_size}')
@@ -199,6 +201,8 @@ if __name__ == "__main__":
         step = 0
         while True:
             input_data = next(train_dataset)
+            if step % host_count != jax.process_index():
+                continue
             if step <= skip_step:
                 step += 1
                 continue
