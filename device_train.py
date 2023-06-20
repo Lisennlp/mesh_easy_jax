@@ -24,6 +24,7 @@ import jax
 from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
+from jax.experimental import PartitionSpec as P
 
 
 # jax.config.update('jax_array', True)
@@ -97,7 +98,6 @@ def update_llama_params(params):
 
 
 def parse_args():
-    # Parse command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default='configs/6B_roto_256_test.json', help="Config file location")
     parser.add_argument("--version", type=int, default=3, help="Choose which model version to use, 1: pjit mesh-haiku-llama 2: xmap mesh-haiku-llama 3: pjit mesh-flax-llama")
@@ -106,7 +106,7 @@ def parse_args():
     return args
 
 
-def build_sample(data):
+def build_sample(data, mesh):
     m = data['labels'] > 0
     d = data['input_ids']
     sample = {
@@ -114,14 +114,11 @@ def build_sample(data):
         "target": d[:, :, 1:],
         "masks": m[:, :, 1:],
         }
-    sample = host_local_array_to_global_array(sample)
+    sample = host_local_array_to_global_array(sample, mesh, P(None, 'dp'))
     return sample
-    # loss, acc = model.train(sample)
-    # return np.array(loss).mean(), np.array(acc).mean()
 
 
 if __name__ == "__main__":
-    # huggingface tokenizers gets very angry if you fork
     # node必须删除
     # multiprocessing.set_start_method("spawn")
     args = parse_args()
@@ -189,14 +186,13 @@ if __name__ == "__main__":
 
         start = time.time()
         # train complie
-        model.train(build_sample(next(train_dataset)))
+        model.train(build_sample(next(train_dataset), mesh=mesh))
         print(f"Train fn compiled in {time.time() - start:.06}s")
         start = time.time()
         # eval complie
         for val_set in val_sets.values():
-            model.eval(build_sample(next(val_set)))
+            model.eval(build_sample(next(val_set), mesh=mesh))
         print(f"Eval fn compiled in {time.time() - start:.06}s")
-
         # start train
         step = 0
         while True:
@@ -206,7 +202,7 @@ if __name__ == "__main__":
             if step <= skip_step:
                 step += 1
                 continue
-            loss, acc = model.train(build_sample(input_data))
+            loss, acc = model.train(build_sample(input_data, mesh=mesh))
             loss = loss.mean().item()
             acc = acc.mean().item()
             if (step % ckpt_every == 0 and step) or step == total_steps:
@@ -222,7 +218,7 @@ if __name__ == "__main__":
                     val_loss, val_acc = [], []
                     val_start = time.time()
                     for _ in range(val_batches):
-                        loss, acc = model.eval(build_sample(next(val_set)))
+                        loss, acc = model.eval(build_sample(next(val_set), mesh=mesh))
                         loss = loss.mean()
                         acc = acc.mean()
                         val_loss.append(loss)
