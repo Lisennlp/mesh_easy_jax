@@ -25,7 +25,6 @@ from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
 from jax.experimental import PartitionSpec as P
-from praxis import py_utils
 
 
 # jax.config.update('jax_array', True)
@@ -162,6 +161,9 @@ if __name__ == "__main__":
     mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
     print(f'mesh: {mesh}')
 
+    from praxis import py_utils
+    py_utils.sync_global_devices('Train start.......')
+
     # project = params.get("wandb_project", "Linli-chinese-llama-finetune")
     # wandb.init(project=project, name=params["name"], config=params, resume=True)
     skip_step = params['skip_step']
@@ -199,7 +201,6 @@ if __name__ == "__main__":
         step = 0
         print(f'host_count: {host_count} process id: {jax.process_index()}')
         data_count = 0
-        # py_utils.sync_global_devices('Train start.......')
         while True:
             input_data = next(train_dataset)
             if data_count % host_count != jax.process_index():
