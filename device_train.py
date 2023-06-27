@@ -27,8 +27,11 @@ from easylm.llama_model import (
 from jax.experimental import PartitionSpec as P
 
 
+
+jax.distributed.initialize(num_processes=1, process_id=0)
+
 # jax.config.update('jax_array', True)
-tf.config.experimental.set_visible_devices([], "GPU")
+# tf.config.experimental.set_visible_devices([], "GPU")
 # os.environ['JAX_PLATFORMS'] = ''
 # os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
@@ -55,18 +58,20 @@ def search_newest_train_state(params, debug=False):
         model_paths = [f'trainstate::gs://{bucket_name}/{model_path}' if step > 0 else f'params::gs://{bucket_name}/{model_path}' for model_path in model_dir]
     else:
         step, model_paths = 0, []
+    step, model_paths = 0, []
     return step, model_paths
 
 def search_newest_step_orbax(params):
     model_dir = f'gs://{params["bucket"]}/{params["model_dir"]}'
-    response = subprocess.run('gsutil ls gs://llm_base_models/orbax_async_easylm', stdout=subprocess.PIPE, shell=True)
+    command = f'gsutil ls {model_dir}'
+    response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
     step_map_path = {}
     for path in response.stdout.decode('utf-8').split('\n'):
         step = re.findall('\d+', path)
         if step:
-            step_map_path[int(step[0])] = path
+            step_map_path[int(step[0])] = os.path.split(path)[0]
     step_map_path = sorted(step_map_path.items())
-    return step_map_path[-1]
+    return step_map_path[-1][0], model_dir
 
 def update_llama_params(params):
     if params['save_mode'] == 'orbax':

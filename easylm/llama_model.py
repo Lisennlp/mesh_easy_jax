@@ -48,6 +48,9 @@ from easylm.checkpoint import StreamingCheckpointer
 import orbax
 from orbax import checkpoint
 
+from flax.serialization import (
+    from_bytes, to_bytes, to_state_dict, from_state_dict
+)
 
 LLAMA_STANDARD_CONFIGS = {
     '3b': {
@@ -1033,16 +1036,24 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             elif k == 'params' and isinstance(v, dict):
                 self.state[k] = FrozenDict(v)
 
-    def orbax_async_checkpointer(self, model_dir):
-        # model_dir = 'gs://llm_base_models/easylm/'
-        # if jax.process_index() == 0:
-        self.mngr = self.config.save
-        lastest_step = self.mngr.latest_step()
+    def init_mngr(self, model_dir):
+        item = {
+                'opt_state': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
+                'params': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
+                'step': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.ArrayCheckpointHandler()),
+                }
+        self.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_dir}', item)
+        
+    def load_orbax_async_checkpoint(self):
+        if 'step' not in self.shard_fns:
+            target.pop('step')
+        lastest_step = int(self.mngr.latest_step())
         print(f'latest step: {lastest_step}')
         self.state = self.mngr.restore(lastest_step)
-        print(f'self.state: {self.state.keys()}')
-        print(f'shrad keys: {self.shard_fns["params"]}')
-        self.state = tree_apply(self.shard_fns['params'], FrozenDict(self.state))
+        self.recovery_train_state()
+        print(f'state: {self.state.keys()}')
+        print(f'shard keys: {self.shard_fns.keys()}')
+        self.state = tree_apply(self.shard_fns, self.state)
             
     def init_state(self):
         self.config = LLaMAConfig(**self.config)
@@ -1095,8 +1106,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
+
+
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
         
+        if self.config.save_mode == 'orbax':
+            self.init_mngr(model_save_dir)
 
         if self.config.load_checkpoint:
             start = time.time()
@@ -1104,8 +1119,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             if self.config.save_mode == 'orbax':
                 print(f'save_mode1: {self.config.save_mode}')
                 # init orbax async checkpointer and load latest checkpoint
-                self.orbax_async_checkpointer(self.config.load_checkpoint)
-
+                self.load_orbax_async_checkpoint()
             else:
                 print(f'save_mode2: {self.config.save_mode}')
                 if 'train_state' in self.config.load_checkpoint[0]:
@@ -1127,7 +1141,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                     self.state = self.init_from_params(restored_params)
                     del restored_params
                     jax.lib.xla_bridge.get_backend().defragment()
-                print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
+            print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')
             self.state = self.init_(self.rng)
@@ -1151,12 +1165,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         start = time.time()
         print(f'Start to save model: ‘{path}’')
         if self.config.save_mode == 'orbax':
-            if jax.process_index() == 0:
-                self.mngr.save(self.state['step'].item(), self.state)
-            else:
-                print(f'process_index: {jax.process_index()} waiting 30s')
-                time.sleep(10)
-            # mngr.wait_until_finished()
+            self.mngr.save(self.state['step'].item(), self.state)
+            # self.mngr.wait_until_finished()
         else:
             self.checkpointer.save_all(self.state, self.gather_fns, model_dir=path)
         print(f'Model save finished. take time: {time.time() - start}')

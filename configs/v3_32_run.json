@@ -30,7 +30,7 @@
     "tpu_size": 32,
   
     "bucket": "llm_base_models",
-    "model_dir": "easylm/linli_inese_llama",
+    "model_dir": "orbax_async_easylm",
   
     "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
     "val_set": {
