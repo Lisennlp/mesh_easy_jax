@@ -107,6 +107,8 @@ def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, 
     fnames = [index_fname] if index_fname.endswith('.tfrecords') else open(index_fname).read().splitlines()
     ds = tf.data.Dataset.from_tensor_slices(fnames)#.repeat()
     ds = ds.apply(tf.data.TFRecordDataset)
+    # shard host data
+    ds = ds.shard(jax.process_count(), jax.process_index())
     ds = ds.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.shuffle(buffer_size=10000) # 从文件中取buffer_size数据，然后打乱
     ds = ds.padded_batch(batch_size=np.prod(batch_size), 

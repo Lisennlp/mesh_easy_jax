@@ -203,9 +203,6 @@ if __name__ == "__main__":
         start = time.time()
         while True:
             input_data = next(train_dataset)
-            if data_count % host_count != jax.process_index():
-                data_count += 1
-                continue
             if step <= skip_step:
                 step += 1
                 continue
