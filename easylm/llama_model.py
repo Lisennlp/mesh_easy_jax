@@ -1017,9 +1017,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
     def recovery_train_state(self):
         for k, v in self.state.items():
-            if k == 'opt_state' and isinstance(v, dict):
+            if k == 'opt_state':
+                if isinstance(v, list):
+                    temp_v = {}
+                    for v_ in v:
+                        if isinstance(v_, dict) and 'mu' in v_:
+                            temp_v['2'] = v_
+                            break
+                    v = temp_v
+                assert '2' in v
                 # 不是很明白保存的优化器为什么是这样
-                assert '2' in v and '5' in v
                 # 正好对应optax.chain()的6个位置的对象。
                 self.state[k] = (
                                 optax._src.base.EmptyState(), 
@@ -1031,8 +1038,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                                                         ),
                                 optax._src.base.EmptyState(), 
                                 optax._src.base.EmptyState(), 
-                                optax._src.transform.ScaleByScheduleState(v['5']['count'])
-                                )
+                                optax._src.transform.ScaleByScheduleState(v['2']['count'])
+                )
             elif k == 'params' and isinstance(v, dict):
                 self.state[k] = FrozenDict(v)
 

@@ -28,7 +28,7 @@ from jax.experimental import PartitionSpec as P
 
 
 
-jax.distributed.initialize(num_processes=1, process_id=0)
+jax.distributed.initialize(num_processes=jax.process_count(), process_id=jax.process_index())
 
 # jax.config.update('jax_array', True)
 # tf.config.experimental.set_visible_devices([], "GPU")

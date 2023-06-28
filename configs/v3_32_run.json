@@ -1,11 +1,11 @@
 {
-    "save_mode": "1orbax",
+    "save_mode": "orbax",
     "save_optimizer_state": true,
     "embd_pdrop": 0.1,
     "resid_pdrop": 0.05,
     "intermediate_size": 11008,
     "transformation": "pjit", 
-    "layers": 2,
+    "layers": 32,
     "d_model": 4096,
     "n_heads": 32,
     "n_vocab": 32000,
@@ -37,9 +37,9 @@
               "test": "gs://jax_llm_data/dreamily_translation_general.test.tfrecords"
     },
   
-    "val_batches": 2000,
-    "val_every": 3000,
-    "ckpt_every": 3000,
+    "val_batches": 50,
+    "val_every": 50,
+    "ckpt_every": 50,
     "keep_every": 3000,
   
     "name": "llama7b_finetune",
