@@ -853,8 +853,13 @@ class FlaxLLaMAModule(nn.Module):
 
     def setup(self):
         self.embed_dim = self.config.hidden_size
+        if self.config.gradient_checkpointing != '':
+            wte = remat(nn.Embed, block, static_argnums=(3, 4, 5), 
+                            policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+        else:
+            wte = nn.Embed
 
-        self.wte = nn.Embed(
+        self.wte = wte(
             self.config.vocab_size,
             self.config.hidden_size,
             embedding_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
@@ -921,12 +926,19 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        t = remat(FlaxLLaMAModule, 
-                static_argnums=(3, 4, 5),
-                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+        if self.config.gradient_checkpointing != '':
+            t = remat(FlaxLLaMAModule, 
+                    static_argnums=(3, 4, 5),
+                    policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+            d = remat(nn.Dense, 
+                    static_argnums=(3, 4, 5),
+                    policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+        else:
+            t = FlaxLLaMAModule
+            d = nn.Dense
+
         self.transformer = t(self.config, dtype=self.dtype)
-        
-        self.lm_head = nn.Dense(
+        self.lm_head = d(
             self.config.vocab_size,
             dtype=self.dtype,
             param_dtype=self.param_dtype,

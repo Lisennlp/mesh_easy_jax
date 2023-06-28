@@ -162,7 +162,7 @@ if __name__ == "__main__":
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
 
-    devices = np.array(jax.devices()).reshape(per_replica_batch * tpu_size // cores_per_replica, cores_per_replica)
+    devices = np.array(jax.devices()).reshape(tpu_size // cores_per_replica, cores_per_replica)
     mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
     print(f'mesh: {mesh}')
 
@@ -210,6 +210,7 @@ if __name__ == "__main__":
             input_data = next(train_dataset)
             if step <= skip_step:
                 step += 1
+                start = time.time()
                 continue
             loss, acc = model.train(build_sample(input_data, mesh=mesh))
             loss = loss.item()
