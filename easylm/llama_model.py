@@ -854,7 +854,7 @@ class FlaxLLaMAModule(nn.Module):
     def setup(self):
         self.embed_dim = self.config.hidden_size
         if self.config.gradient_checkpointing != '':
-            wte = remat(nn.Embed, block, static_argnums=(3, 4, 5), 
+            wte = remat(nn.Embed, static_argnums=(3, 4, 5), 
                             policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
         else:
             wte = nn.Embed

@@ -30,7 +30,7 @@
   "tpu_size": 8,
 
   "bucket": "llm_base_models",
-  "model_dir": "easylm/orbax_async_test",
+  "model_dir": "orbax_async_test",
 
   "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
   "val_set": {
