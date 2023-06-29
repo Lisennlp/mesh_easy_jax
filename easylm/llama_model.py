@@ -52,6 +52,8 @@ from flax.serialization import (
     from_bytes, to_bytes, to_state_dict, from_state_dict
 )
 
+remat = nn_partitioning.remat
+
 LLAMA_STANDARD_CONFIGS = {
     '3b': {
         'vocab_size': 32000,
@@ -290,7 +292,6 @@ class LLaMAConfig2(PretrainedConfig):
             raise ValueError(f'Unsupported load config type: {load_type}')
 
 
-remat = nn_partitioning.remat
 
 logger = logging.get_logger(__name__)
 
@@ -456,8 +457,8 @@ class FlaxLLaMAAttention(nn.Module):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
         xq = with_sharding_constraint(xq, PS("dp", None, "mp"))
-        xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
-        xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
+        xk = with_sharding_constraint(xk, PS("dp", None, "mp"))
+        xv = with_sharding_constraint(xv, PS("dp", None, "mp"))
 
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
@@ -500,7 +501,7 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
 
-        # usual dot product attention
+        # lsp: 256M
         attn_weights = dot_product_attention_weights(
             xq,
             xk,
@@ -511,9 +512,10 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
-
+        attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp", None, None))
+        # lsp: 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
+
         attn_output = self._merge_heads(attn_output)
         attn_output = self.wo(attn_output)
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
@@ -604,8 +606,9 @@ class FlaxLLaMABlock(nn.Module):
         output_attentions: bool = False,
         fcm_mask: Optional[jnp.ndarray] = None,
     ):
+        attn_norm = self.attention_norm(hidden_states)
         attn_outputs = self.attention(
-            self.attention_norm(hidden_states),
+            attn_norm,
             attention_mask=attention_mask,
             position_ids=position_ids,
             deterministic=deterministic,
@@ -616,8 +619,9 @@ class FlaxLLaMABlock(nn.Module):
         attn_output = attn_outputs[0]
         hidden_states = hidden_states + attn_output
 
+        ffn_norm = self.ffn_norm(hidden_states)
         feed_forward_hidden_states = self.feed_forward(
-            self.ffn_norm(hidden_states),
+            ffn_norm,
             deterministic=deterministic,
         )
         hidden_states = hidden_states + feed_forward_hidden_states
@@ -781,8 +785,8 @@ class FlaxLLaMABlockCollection(nn.Module):
     def setup(self):
         block = FlaxLLaMABlock
         if self.config.gradient_checkpointing != '':
-            FlaxLLaMACheckpointBlock =remat (
-                block, static_argnums=(3, 4, 5),
+            FlaxLLaMACheckpointBlock =remat(
+                block, static_argnums=(3, 4, 5, 6, ),
                 policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
             )
             block = FlaxLLaMACheckpointBlock
@@ -856,8 +860,11 @@ class FlaxLLaMAModule(nn.Module):
         if self.config.gradient_checkpointing != '':
             wte = remat(nn.Embed, static_argnums=(3, 4, 5), 
                             policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
+            rmsnorm = remat(RMSNorm, static_argnums=(3, 4, 5), 
+                            policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing))
         else:
             wte = nn.Embed
+            rmsnorm = RMSNorm
 
         self.wte = wte(
             self.config.vocab_size,
@@ -867,8 +874,9 @@ class FlaxLLaMAModule(nn.Module):
             param_dtype=self.param_dtype,
         )
         self.dropout = nn.Dropout(rate=self.config.embd_pdrop)
+        # 不能rematFlaxLLaMABlockCollection
         self.h = FlaxLLaMABlockCollection(self.config, dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision)
-        self.ln_f = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps, dtype=self.dtype, param_dtype=self.param_dtype)
+        self.ln_f = rmsnorm(self.config.hidden_size, eps=self.config.rms_norm_eps, dtype=self.dtype, param_dtype=self.param_dtype)
 
     def __call__(
         self,
@@ -969,7 +977,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_token, target_token, mask)
             new_grad = getattr(jax, 'tree_multimap', jax.tree_map)(lambda a, b: a + b, old_grad, grads)
             return  new_grad, (loss, accuracy)
-
+        
         if input_tokens.shape[0] == 1:
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
             (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0], masks[0])
@@ -1164,6 +1172,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         else:
             print(f'Train model from scrath!!!')
             self.state = self.init_(self.rng)
+
         param_count = hk.data_structures.tree_size(self.state['params'])
         head_print(f"Total parameters: {param_count}")
         

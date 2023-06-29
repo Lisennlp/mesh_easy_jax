@@ -27,7 +27,6 @@ from easylm.llama_model import (
 from jax.experimental import PartitionSpec as P
 
 
-
 jax.distributed.initialize(num_processes=jax.process_count(), process_id=jax.process_index())
 
 # jax.config.update('jax_array', True)
@@ -174,7 +173,6 @@ if __name__ == "__main__":
     skip_step = params['skip_step']
     print(f'skip_step: {skip_step}')
     host_count = tpu_size // cores_per_replica
-
     with mesh:
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
         print(f'train_batch_size: {train_batch_size}')
