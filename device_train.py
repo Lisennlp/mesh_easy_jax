@@ -208,7 +208,7 @@ if __name__ == "__main__":
         start = time.time()
         while True:
             input_data = next(train_dataset)
-            if step <= skip_step:
+            if step < skip_step:
                 step += 1
                 start = time.time()
                 continue
