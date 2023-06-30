@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import flax
 
-from easylm.checkpoint import StreamingCheckpointer
+from easylm.checkpoint_ori import StreamingCheckpointer
 from easylm.jax_utils import float_tensor_to_dtype
 
 
@@ -51,9 +51,9 @@ def inverse_permute(w):
     return inverted_w
 
 
-def main(args):
+def main(args, params):
     start = time.time()
-    params = LLAMA_STANDARD_CONFIGS[args.model_size]
+    
     n_layers = params["n_layers"]
     n_heads = params["n_heads"]
     dim = params["dim"]
@@ -115,15 +115,17 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+
     print(f'checkpoint_dir: {args.checkpoint_dir}')
     print(f'output_file: {args.output_file}')
     print(f'model_size: {args.model_size}')
     print(f'streaming: {args.streaming}')
 
-    main(args)
+    n_layers = params["n_layers"]
+    n_heads = params["n_heads"]
+    dim = params["dim"]
 
-# python convert_hf_to_easylm.py  \ 
-#        --checkpoint_dir     \
-#        --output_file  \
-#        --model_size 7b \
-#        --streaming
+    main(args, params)
+
+
+# python convert_hf_to_easylm.py  --checkpoint_dir  ~/pretrain_models/Ziya-LLaMA-13B-Pretrain-v1-hf  --output_file  ~/pretrain_models/Ziya-LLaMA-13B-Pretrain-v1-easylm/model.stream --model_size 13b --streaming
