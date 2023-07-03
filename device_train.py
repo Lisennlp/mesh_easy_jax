@@ -120,7 +120,8 @@ def build_sample(data, mesh):
         "target": d[:, :, 1:],
         "masks": m[:, :, 1:],
         }
-    sample = host_local_array_to_global_array(sample, mesh, P(None, 'dp'))
+    # sample = host_local_array_to_global_array(sample, mesh, P(None, 'dp'))
+    sample = host_local_array_to_global_array(sample, mesh, P(None, ('dp', 'fsdp')))
     return sample
 
 
@@ -164,11 +165,12 @@ if __name__ == "__main__":
 
     dp = int(params['dp'])
     mp = int(params['mp'])
+    fsdp = int(params['fsdp'])
 
-    assert dp * mp == tpu_size
-    devices = np.array(jax.devices()).reshape(dp, mp)
+    assert dp * fsdp * mp == tpu_size
+    devices = np.array(jax.devices()).reshape(dp, fsdp, mp)
 
-    mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
+    mesh = jax.sharding.Mesh(devices, ('dp', 'fsdp', 'mp'))
     print(f'mesh: {mesh}')
 
     from praxis import py_utils

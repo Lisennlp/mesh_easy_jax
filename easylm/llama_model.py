@@ -139,23 +139,22 @@ class LLaMAConfig(object):
     def get_partition_rules():
         return (
             # embeddings
-            ("transformer/wte/embedding", PS("mp", None)),
+            ("transformer/wte/embedding", PS("mp", "fsdp")),
             # atention
-            ("attention/(wq|wk|wv)/kernel", PS(None, "mp")),
-            ("attention/wo/kernel", PS("mp", None)),
+            ("attention/(wq|wk|wv)/kernel", PS("fsdp", "mp")),
+            ("attention/wo/kernel", PS("mp", "fsdp")),
             # mlp
-            ("feed_forward/w1/kernel", PS(None, "mp")),
-            ("feed_forward/w2/kernel", PS("mp", None)),
-            ("feed_forward/w3/kernel", PS(None, "mp")),
+            ("feed_forward/w1/kernel", PS("fsdp", "mp")),
+            ("feed_forward/w2/kernel", PS("mp", "fsdp")),
+            ("feed_forward/w3/kernel", PS("fsdp", "mp")),
             # layer norms
             ("attention_norm/kernel", PS(None)),
             ("ffn_norm/kernel", PS(None)),
             # output head
             ("transformer/ln_f/kernel", PS(None)),
-            ("lm_head/kernel", PS(None, "mp")),
+            ("lm_head/kernel", PS("fsdp", "mp")),
             ('.*', PS(None)),
         )
-
 
 class LLaMAConfig2(PretrainedConfig):
     model_type = "llama"
@@ -456,9 +455,12 @@ class FlaxLLaMAAttention(nn.Module):
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
-        xq = with_sharding_constraint(xq, PS("dp", None, "mp"))
-        xk = with_sharding_constraint(xk, PS("dp", None, "mp"))
-        xv = with_sharding_constraint(xv, PS("dp", None, "mp"))
+        # xq = with_sharding_constraint(xq, PS("dp", None, "mp"))
+        # xk = with_sharding_constraint(xk, PS("dp", None, "mp"))
+        # xv = with_sharding_constraint(xv, PS("dp", None, "mp"))
+        xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
+        xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
+        xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
 
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
@@ -1099,13 +1101,23 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     out_shardings=train_state_partition,
                                     donate_argnums=(0, ),
                         )
+        # self.train_ = pjit(self.train_step,
+        #                   in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp'), PS()),
+        #                   out_shardings=(PS(), PS(), train_state_partition),
+        #                   donate_argnums=(0, ),
+        #                         )
+        # self.eval_ = pjit(self.eval_step,
+        #                   in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+        #                   out_shardings=(PS(), PS()),
+        #                 #   donate_argnums=(0, ),
+        #                         )
         self.train_ = pjit(self.train_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp'), PS()),
+                          in_shardings=(train_state_partition, PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
                           donate_argnums=(0, ),
                                 )
         self.eval_ = pjit(self.eval_step,
-                          in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
+                          in_shardings=(train_state_partition, PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp'))),
                           out_shardings=(PS(), PS()),
                         #   donate_argnums=(0, ),
                                 )
@@ -1117,6 +1129,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         assert thread_resources.env.shape['dp'] == self.config.dp
         dp = thread_resources.env.shape['dp']
         mp = thread_resources.env.shape['mp']
+        fsdp = thread_resources.env.shape['fsdp']
         seq = self.config.seq
         vocab = self.config.vocab_size
         print('init state============')
@@ -1128,6 +1141,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("in shape", x.shape)
         head_print("dp", dp)
         head_print("mp", mp)
+        head_print("fsdp", mp)
         self.gen_length = 1
         self.rng = next_rng()
 
