@@ -27,10 +27,12 @@ from easylm.llama_model import (
 from jax.experimental import PartitionSpec as P
 
 
-jax.distributed.initialize(num_processes=jax.process_count(), process_id=jax.process_index())
+tf.config.experimental.set_visible_devices([], "GPU")
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = ".8"
+
+jax.distributed.initialize()
 
 # jax.config.update('jax_array', True)
-# tf.config.experimental.set_visible_devices([], "GPU")
 # os.environ['JAX_PLATFORMS'] = ''
 # os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 

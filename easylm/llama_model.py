@@ -1113,10 +1113,10 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         self.shard_fns, self.gather_fns = make_shard_and_gather_fns(train_state_partition, train_state_shapes)
         import haiku as hk
         key = hk.PRNGSequence(42)
-        assert thread_resources.env.shape['mp'] == self.config.cores_per_replica
+        assert thread_resources.env.shape['mp'] == self.config.mp
+        assert thread_resources.env.shape['dp'] == self.config.dp
         dp = thread_resources.env.shape['dp']
         mp = thread_resources.env.shape['mp']
-        mp_per_host = min(mp, 8)
         seq = self.config.seq
         vocab = self.config.vocab_size
         print('init state============')
