@@ -1,4 +1,5 @@
 {
+    "load_mode": "easylm",
     "save_mode": "orbax",
     "save_optimizer_state": true,
     "embd_pdrop": 0.1,

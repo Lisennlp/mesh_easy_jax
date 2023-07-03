@@ -73,7 +73,7 @@ def search_newest_step_orbax(params):
     return step_map_path[-1][0], model_dir
 
 def update_llama_params(params):
-    if params['save_mode'] == 'orbax':
+    if params['load_mode'] == 'orbax':
         params['skip_step'], params['load_checkpoint'] = search_newest_step_orbax(params)
     else:
         params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params, debug=True)

@@ -1134,21 +1134,19 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
 
-
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
-        
-        if self.config.save_mode == 'orbax':
+        if 'orbax' in [self.config.load_mode, self.config.save_mode == 'orbax']:
             self.init_mngr(model_save_dir)
 
         if self.config.load_checkpoint:
             start = time.time()
             print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
-            if self.config.save_mode == 'orbax':
-                print(f'save_mode1: {self.config.save_mode}')
+            if self.config.load_mode == 'orbax':
+                print(f'load_mode1: {self.config.load_mode}')
                 # init orbax async checkpointer and load latest checkpoint
                 self.load_orbax_async_checkpoint()
             else:
-                print(f'save_mode2: {self.config.save_mode}')
+                print(f'load_mode: {self.config.load_mode}')
                 if 'train_state' in self.config.load_checkpoint[0]:
                     print(f'Loading train_state')
                     self.state, _ = self.checkpointer.load_trainstate_checkpoint(
