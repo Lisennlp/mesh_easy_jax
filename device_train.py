@@ -57,7 +57,7 @@ def search_newest_train_state(params, debug=False):
         model_paths = [f'trainstate::gs://{bucket_name}/{model_path}' if step > 0 else f'params::gs://{bucket_name}/{model_path}' for model_path in model_dir]
     else:
         step, model_paths = 0, []
-    step, model_paths = 0, []
+    # step, model_paths = 0, []
     return step, model_paths
 
 def search_newest_step_orbax(params):
