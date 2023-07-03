@@ -160,8 +160,12 @@ if __name__ == "__main__":
     print(f'version: {args.version}\nparams: {params}')
     print(f'bucket： {bucket} model_dir: {model_dir}')
 
+    dp = int(params['dp'])
+    mp = int(params['mp'])
 
-    devices = np.array(jax.devices()).reshape(tpu_size // cores_per_replica, cores_per_replica)
+    assert dp * mp == tpu_size
+    devices = np.array(jax.devices()).reshape(dp, mp)
+
     mesh = jax.sharding.Mesh(devices, ('dp', 'mp'))
     print(f'mesh: {mesh}')
 
