@@ -1,7 +1,7 @@
 {
     "dp": 1,
     "mp": 32,
-    "load_mode": "easylm",
+    "load_mode": "orbax",
     "save_mode": "orbax",
     "save_optimizer_state": true,
     "embd_pdrop": 0.1,
