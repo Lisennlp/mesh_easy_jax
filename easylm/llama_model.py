@@ -1141,7 +1141,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         head_print("in shape", x.shape)
         head_print("dp", dp)
         head_print("mp", mp)
-        head_print("fsdp", mp)
+        head_print("fsdp", fsdp)
         self.gen_length = 1
         self.rng = next_rng()
 
