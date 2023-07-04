@@ -401,7 +401,7 @@ class FlaxLLaMAAttention(nn.Module):
 
         self.freqs_cis = precompute_freqs_cis(
             self.head_dim,
-            config.max_sequence_length * 2,
+            config.max_sequence_length,
             dtype=self.dtype,
         )
 
@@ -1142,8 +1142,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
         head_print("in shape", x.shape)
         head_print("dp", dp)
-        head_print("mp", mp)
         head_print("fsdp", fsdp)
+        head_print("mp", mp)
         self.gen_length = 1
         self.rng = next_rng()
 
@@ -1181,7 +1181,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                                                                 )
                     self.state = self.init_from_params(restored_params)
                     del restored_params
-                    jax.lib.xla_bridge.get_backend().defragment()
+                    # jax.lib.xla_bridge.get_backend().defragment()
             print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             print(f'Train model from scrath!!!')

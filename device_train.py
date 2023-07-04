@@ -204,6 +204,7 @@ if __name__ == "__main__":
         model.train(build_sample(next(train_dataset), mesh=mesh))
         print(f"Train fn compiled in {time.time() - start:.06}s")
         # eval complie
+        start = time.time()
         for val_set in val_sets.values():
             model.eval(build_sample(next(val_set), mesh=mesh))
         print(f"Eval fn compiled in {time.time() - start:.06}s")
@@ -228,7 +229,8 @@ if __name__ == "__main__":
                     print("Training completed!")
                     exit()
 
-            if step % val_every == 0:
+            if step % val_every == 0 and step:
+                print(f'Start to evaluate....')
                 eval_task_dict = defaultdict(dict)
                 for val_name, val_set in val_sets.items():
                     val_loss, val_acc = [], []
