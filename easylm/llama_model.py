@@ -514,7 +514,9 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp", None, None))
+        # attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp", None, None))
+        # lsp
+        attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
 

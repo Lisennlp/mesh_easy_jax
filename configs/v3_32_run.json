@@ -9,7 +9,7 @@
     "resid_pdrop": 0.05,
     "intermediate_size": 11008,
     "transformation": "pjit", 
-    "layers": 32,
+    "layers":32,
     "d_model": 4096,
     "n_heads": 32,
     "n_vocab": 32000,
