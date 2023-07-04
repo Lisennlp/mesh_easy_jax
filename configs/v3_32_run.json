@@ -1,6 +1,6 @@
 {
-    "dp": 4,
-    "fsdp": 1,
+    "dp": 1,
+    "fsdp": 4,
     "mp": 8,
     "load_mode": "orbax",
     "save_mode": "orbax",
