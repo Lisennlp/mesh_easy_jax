@@ -1,7 +1,7 @@
 {
   "dp": 1,
   "fsdp": 1,
-  "mp": 32,
+  "mp": 8,
   "load_mode": "orbax",
   "save_mode": "orbax",
   "save_optimizer_state": true,
