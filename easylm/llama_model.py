@@ -353,7 +353,6 @@ def apply_rotary_emb_praxis(
         * (10000.0 / min_timescale) ** fraction
     )
     # position = jnp.arange(end, dtype=dtype)[jnp.newaxis, :]
-    print(f'position: {position.shape}')
     position = position[:, :, jnp.newaxis, jnp.newaxis]
     timescale = timescale[jnp.newaxis, jnp.newaxis, jnp.newaxis, :]
     sinusoid_inp = (position / timescale).astype(dtype)
@@ -370,7 +369,6 @@ def apply_rotary_emb_praxis(
     second_part = second_half * cos + first_half * sin
     # lsp
     final = jnp.stack((first_part, second_part), axis=-1).reshape(*first_part.shape[:-1], -1).astype(dtype)
-    print(f'final: {final.shape}')
     # stack和concatenate不同
     return final
 
