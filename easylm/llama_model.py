@@ -1185,7 +1185,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         model_save_dir = os.path.join(self.config.bucket, self.config.model_dir)
 
         self.checkpointer = StreamingCheckpointer(checkpoint_config, model_save_dir, enable=jax.process_index() == 0)
-        if 'orbax' in [self.config.load_mode, self.config.save_mode == 'orbax']:
+        if 'orbax' in [self.config.load_mode, self.config.save_mode]:
+            logger.info(f'Init mngr....')
             self.init_mngr(model_save_dir)
 
         if self.config.load_checkpoint:
