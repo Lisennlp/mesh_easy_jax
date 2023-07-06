@@ -50,7 +50,7 @@ def setup_logger(host_id):
     logger = CustomLogger('my_logger')
     logger.setLevel(logging.DEBUG)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    log_filename = f"logs/log_{current_time}.txt"
+    log_filename = f"logs/log_{current_time}_{host_id}.txt"
     file_handler = logging.FileHandler(log_filename)
     file_handler.setLevel(logging.DEBUG)
     console_handler = logging.StreamHandler()
