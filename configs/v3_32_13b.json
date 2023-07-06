@@ -44,6 +44,6 @@
     "ckpt_every": 3000,
     "keep_every": 3000,
   
-    "name": "llama7b_finetune",
-    "wandb_project": "Linli-chinese-llama-finetune"
+    "name": "llama13b_finetune",
+    "wandb_project": "ziya-chinese-llama-finetune"
   }

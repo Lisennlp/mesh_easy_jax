@@ -38,8 +38,7 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = ".8"
 # os.environ['JAX_PLATFORMS'] = ''
 # os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
-# wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
-
+wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 
 
 DEFAULT_PARAMS = {
@@ -179,8 +178,9 @@ if __name__ == "__main__":
     logger.info(f'Mesh: {mesh}')
 
     py_utils.sync_global_devices('Train start.......')
-    # project = params.get("wandb_project", "Linli-chinese-llama-finetune")
-    # wandb.init(project=project, name=params["name"], config=params, resume=True)
+    wandb_project = params.get("wandb_project", "Linli-chinese-llama-finetune")
+    wandb_name = params.get("name", "Linli-chinese-llama-finetune")
+    wandb.init(project=wandb_project, name=wandb_name, config=params, resume=True)
     host_count = tpu_size // cores_per_replica
     with mesh:
         logger.info(f'Host count: {host_count} Process id: {jax.process_index()}')
@@ -256,7 +256,7 @@ if __name__ == "__main__":
                     logger.info(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc} take time: {time.time() - val_start}")
 
                 logger.info(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
-                # wandb.log(eval_task_dict, step)
+                wandb.log(eval_task_dict, step)
             step += 1
 
             steps_per_sec = (step - skip_step) / (time.time() - start)
@@ -273,6 +273,6 @@ if __name__ == "__main__":
                     "tokens_processed": tokens_processed,
                 }
             logger.info(f'Step: {step}: {wandb_stats}')
-            # wandb.log(wandb_stats, step)
+            wandb.log(wandb_stats, step)
         py_utils.sync_global_devices('Train finished.......')
         
