@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import jax
+import subprocess
 
 class CustomLogger(logging.Logger):
     def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
@@ -32,8 +33,9 @@ def setup_logger(host_id):
         command = f'gsutil cp {log_filename} gs://jax_llm_logs/'
         response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
     # 在 Python 解释器关闭时自动执行清理函数
-    import atexit
-    atexit.register(cleanup)
+    if host_id == 0:
+        import atexit
+        atexit.register(cleanup)
     return logger
 
 # 使用示例

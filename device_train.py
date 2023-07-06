@@ -58,7 +58,6 @@ DEFAULT_PARAMS = {
     'rms_norm_eps': 1e-6,
     'max_sequence_length': 2048,
     'num_attention_heads': 32,
-    'd_model': 4096,
     'hidden_size': 4096,
     'vocab_size': 32000,
     'tie_word_embeddings': False,

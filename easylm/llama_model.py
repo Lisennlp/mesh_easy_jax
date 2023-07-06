@@ -1177,9 +1177,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         example_shape = (max(dp, 1), self.config.seq)
         logger.info(f'Example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
-        logger.info("dp", dp)
-        logger.info("fsdp", fsdp)
-        logger.info("mp", mp)
+        logger.info(f'dp: {dp}')
+        logger.info(f"fsdp : {fsdp}")
+        logger.info(f"mp: {mp}")
         self.gen_length = 1
         self.rng = next_rng()
 

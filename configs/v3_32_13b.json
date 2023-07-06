@@ -10,8 +10,8 @@
     "transformation": "pjit", 
     "num_hidden_layers":40,
     "hidden_size": 5120,
-    "n_heads": 40,
-    "n_vocab": 39424,
+    "num_attention_heads": 40,
+    "vocab_size": 39424,
     "norm": "rmsnorm",
     "rotay_from": "easylmm",
     
