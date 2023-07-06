@@ -9,7 +9,7 @@
     "intermediate_size": 13824,
     "transformation": "pjit", 
     "num_hidden_layers":40,
-    "d_model": 5120,
+    "hidden_size": 5120,
     "n_heads": 40,
     "n_vocab": 39424,
     "norm": "rmsnorm",
