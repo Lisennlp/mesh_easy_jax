@@ -51,6 +51,8 @@ from orbax import checkpoint
 from flax.serialization import (
     from_bytes, to_bytes, to_state_dict, from_state_dict
 )
+from log_utils import logger
+
 
 remat = nn_partitioning.remat
 
@@ -289,10 +291,6 @@ class LLaMAConfig2(PretrainedConfig):
             return cls.from_dict(json.loads(raw_config))
         else:
             raise ValueError(f'Unsupported load config type: {load_type}')
-
-
-
-logger = logging.get_logger(__name__)
 
 
 class RMSNorm(nn.Module):
