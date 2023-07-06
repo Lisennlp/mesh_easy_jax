@@ -6,6 +6,8 @@ import re
 from collections import defaultdict
 import subprocess
 import multiprocessing
+import logging
+import datetime
 
 import numpy as np
 import wandb
@@ -25,7 +27,6 @@ from easylm.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule, LLaMATokenizer
 )
 
-
 tf.config.experimental.set_visible_devices([], "GPU")
 os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = ".8"
 
@@ -36,6 +37,41 @@ jax.distributed.initialize()
 # os.environ['JAX_CHECK_TRACER_LEAKS'] = '1'
 
 # wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
+
+
+class CustomLogger(logging.Logger):
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
+        if extra is None:
+            extra = {}
+        extra['host_id'] = jax.process_index()
+        super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
+
+def setup_logger(host_id):
+    logger = CustomLogger('my_logger')
+    logger.setLevel(logging.DEBUG)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    log_filename = f"logs/log_{current_time}.txt"
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.DEBUG)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s-%(filename)s-%(host_id)s] - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    # 注册一个清理函数，在关闭日志处理器时上传日志文件
+    def cleanup():
+        file_handler.close()
+        command = f'gsutil cp {log_filename} gs://jax_llm_logs/'
+        response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
+    # 在 Python 解释器关闭时自动执行清理函数
+    import atexit
+    atexit.register(cleanup)
+    return logger
+
+# 使用示例
+logger = setup_logger(jax.process_index())
 
 DEFAULT_PARAMS = {
     # model
@@ -87,7 +123,7 @@ def search_newest_train_state(params):
             if int(step) > 100:
                 continue
             model_dirs[int(step)].append(blob.name)
-    print(f'model_dirs: {model_dirs}')
+    logger.info(f'model_dirs: {model_dirs}')
     model_dirs = sorted(model_dirs.items(), key=lambda x: x[0])
     if model_dirs:
         step, model_dir = model_dirs[-1]
@@ -162,7 +198,7 @@ if __name__ == "__main__":
         else:
             params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
 
-    print(f'Version: {args.version}\nparams: {params}')
+    logger.info(f'Version: {args.version}\nparams: {params}')
 
     dp = int(params['dp'])
     mp = int(params['mp'])
@@ -171,16 +207,16 @@ if __name__ == "__main__":
     assert dp * fsdp * mp == tpu_size
     devices = np.array(jax.devices()).reshape(dp, fsdp, mp)
     mesh = jax.sharding.Mesh(devices, ('dp', 'fsdp', 'mp'))
-    print(f'Mesh: {mesh}')
+    logger.info(f'Mesh: {mesh}')
 
     py_utils.sync_global_devices('Train start.......')
     # project = params.get("wandb_project", "Linli-chinese-llama-finetune")
     # wandb.init(project=project, name=params["name"], config=params, resume=True)
     host_count = tpu_size // cores_per_replica
     with mesh:
-        print(f'Host count: {host_count} Process id: {jax.process_index()}')
+        logger.info(f'Host count: {host_count} Process id: {jax.process_index()}')
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
-        print(f'Train_batch_size: {train_batch_size}')
+        logger.info(f'Train_batch_size: {train_batch_size}')
         train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num)
         val_batch_size = per_replica_batch
         sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
@@ -198,21 +234,21 @@ if __name__ == "__main__":
         t = build_model(params, version=args.version, ray=False)
         model = t()
         model.init_state()
-        print(f'Init state time: {time.time() - start}')
+        logger.info(f'Init state time: {time.time() - start}')
 
         start = time.time()
         # train complie
         model.train(build_sample(next(train_dataset), mesh=mesh))
-        print(f"Train fn compiled in {time.time() - start:.06}s")
+        logger.info(f"Train fn compiled in {time.time() - start:.06}s")
         # eval complie
         start = time.time()
         for val_set in val_sets.values():
             model.eval(build_sample(next(val_set), mesh=mesh))
-        print(f"Eval fn compiled in {time.time() - start:.06}s")
+        logger.info(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
         step = 0
         skip_step = params['skip_step']
-        print(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
+        logger.info(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
         start = time.time()
         while True:
             input_data = next(train_dataset)
@@ -227,11 +263,11 @@ if __name__ == "__main__":
                 save_path = f"gs://{bucket}/{model_dir}/step_{step}/"
                 model.write_ckpt(save_path)
                 if step == total_steps:
-                    print("Training completed!")
+                    logger.info("Training completed!")
                     exit()
 
             if step % val_every == 0 and step:
-                print(f'Start to evaluate....')
+                logger.info(f'Start to evaluate....')
                 eval_task_dict = defaultdict(dict)
                 for val_name, val_set in val_sets.items():
                     val_loss, val_acc = [], []
@@ -248,9 +284,9 @@ if __name__ == "__main__":
                     eval_task_dict[val_name]['loss'] = val_loss.item()
                     eval_task_dict[val_name]['acc'] = val_acc.item()
 
-                    print(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc} take time: {time.time() - val_start}")
+                    logger.info(f"Validation loss for step {step}, dataset {val_name} loss: {val_loss} acc: {val_acc} take time: {time.time() - val_start}")
 
-                print(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
+                logger.info(f"Step {step} val results: {dict(eval_task_dict)}\n\n")
                 # wandb.log(eval_task_dict, step)
             step += 1
 
@@ -267,7 +303,7 @@ if __name__ == "__main__":
                     "sequences_processed": sequences_processed,
                     "tokens_processed": tokens_processed,
                 }
-            print(f'Step: {step}: {wandb_stats}')
+            logger.info(f'Step: {step}: {wandb_stats}')
             # wandb.log(wandb_stats, step)
         py_utils.sync_global_devices('Train finished.......')
         
