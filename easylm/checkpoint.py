@@ -12,6 +12,7 @@ from flax.traverse_util import flatten_dict, unflatten_dict, empty_node
 import msgpack
 
 from easylm.jax_utils import tree_apply, float_tensor_to_dtype
+from log_utils import logger
 
 
 class StreamingCheckpointer(object):
@@ -52,14 +53,14 @@ class StreamingCheckpointer(object):
     # @staticmethod
     # def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
     #     """if jax.process_index() == 0:  -> 不需要，通过self.enable进行判断"""
-    #     print(f'Model save path: {path}')
+    #     logger.info(f'Model save path: {path}')
     #     train_state = to_state_dict(train_state)
     #     packer = msgpack.Packer()
     #     flattend_train_state = flatten_dict(train_state)
     #     if gather_fns is not None:
     #         gather_fns = flatten_dict(to_state_dict(gather_fns))
     #     if not path.startswith('gs'):
-    #         print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
+    #         logger.info(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
     #     with mlxu.open_file(path, "wb") as fout:
     #         for key, value in flattend_train_state.items():
     #             if gather_fns is not None:
@@ -70,14 +71,14 @@ class StreamingCheckpointer(object):
     @staticmethod
     def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
         """if jax.process_index() == 0:  -> 不需要，通过self.enable进行判断"""
-        print(f'Model save path: {path}')
+        logger.info(f'Model save path: {path}')
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
         if not path.startswith('gs'):
-            print(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
+            logger.info(f'Model save path is not gcloud storage type, so path is transfer to : {path}')
         if jax.process_index() == 0:
             path += '.mu'
         elif jax.process_index() == 1:
@@ -87,7 +88,7 @@ class StreamingCheckpointer(object):
         else:
             path = '/dev/null'
 
-        print(f'process_id: {jax.process_index()} path: {path}')
+        logger.info(f'process_id: {jax.process_index()} path: {path}')
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
                 if jax.process_index() == 0:
@@ -163,7 +164,7 @@ class StreamingCheckpointer(object):
             for key, value in flattened_target.items():
                 if key not in flattend_train_state and value == empty_node:
                     flattend_train_state[key] = value
-        print(f'flattend_train_state: {len(flattend_train_state)}')
+        logger.info(f'flattend_train_state: {len(flattend_train_state)}')
         train_state = unflatten_dict(flattend_train_state)
         if target is None:
             return train_state
@@ -220,7 +221,7 @@ class StreamingCheckpointer(object):
         restored_params = None
         if load_type == 'trainstate':
             # Load the entire train state in the streaming format
-            print(f'load_type: {load_type} || load_path: {load_path}')
+            logger.info(f'load_type: {load_type} || load_path: {load_path}')
             train_state = cls.load_checkpoint(
                 path=load_path,
                 target=trainstate_target,
