@@ -50,6 +50,8 @@ def setup_logger(host_id):
     logger = CustomLogger('my_logger')
     logger.setLevel(logging.DEBUG)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
     log_filename = f"logs/log_{current_time}_{host_id}.txt"
     file_handler = logging.FileHandler(log_filename)
     file_handler.setLevel(logging.DEBUG)
