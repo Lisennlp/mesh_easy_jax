@@ -17,7 +17,7 @@
     
     "seq": 2048,
     "cores_per_replica": 8,
-    "per_replica_batch": 8,
+    "per_replica_batch": 12,
     "gradient_accumulation_steps": 2,
     "seed": 42,
   

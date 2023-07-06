@@ -68,9 +68,8 @@ def setup_logger(host_id):
         command = f'gsutil cp {log_filename} gs://jax_llm_logs/'
         response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
     # 在 Python 解释器关闭时自动执行清理函数
-    if jax.process_index() == 0:
-        import atexit
-        atexit.register(cleanup)
+    import atexit
+    atexit.register(cleanup)
     return logger
 
 # 使用示例
