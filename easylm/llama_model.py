@@ -1009,11 +1009,10 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         
     def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
-        logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape}')
         if masks is not None:
-            logger.info(f'Masks: {masks.shape}')
+            logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: {masks.shape}')
         else:
-            logger.info(f'Masks: None')
+            logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
 
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
