@@ -31,7 +31,7 @@ from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
 from jax.experimental.maps import thread_resources
-from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
+from mesh_transformer.util import to_f32, to_bf16, maybe_shard, global_norm
 from jax.experimental.pjit import pjit
 
 from easylm.jax_utils import (
@@ -1180,9 +1180,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         example_shape = (max(dp, 1), self.config.seq)
         print(f'Example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
-        head_print("dp", dp)
-        head_print("fsdp", fsdp)
-        head_print("mp", mp)
+        print("dp", dp)
+        print("fsdp", fsdp)
+        print("mp", mp)
         self.gen_length = 1
         self.rng = next_rng()
 
@@ -1227,7 +1227,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             self.state = self.init_(self.rng)
 
         param_count = hk.data_structures.tree_size(self.state['params'])
-        head_print(f"Total parameters: {param_count}")
+        print(f"Total parameters: {param_count}")
         
     def train(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
