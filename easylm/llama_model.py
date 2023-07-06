@@ -341,7 +341,6 @@ def apply_rotary_emb(
 
     # add head dim
     freqs_cis = jnp.reshape(freqs_cis, (*freqs_cis.shape[:2], 1, *freqs_cis.shape[2:]))
-    print()
     xq_out = xq_ * freqs_cis
     xq_out = jnp.stack((jnp.real(xq_out), jnp.imag(xq_out)), axis=-1).reshape(*xq_out.shape[:-1], -1)
 
@@ -383,7 +382,6 @@ def apply_rotary_emb_praxis(
     sinusoid_inp = (position / timescale).astype(dtype)
     sin = jnp.sin(sinusoid_inp)
     cos = jnp.cos(sinusoid_inp)
-
     # sin, cos = freqs_cis
     qk = inputs.astype(dtype).reshape(*inputs.shape[:-1], -1, 2)
     # split和reshape分割不同
@@ -568,7 +566,6 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        # attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp", None, None))
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: 256M
@@ -801,7 +798,8 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
 
         inputs = {"params": params or self.params}
 
-        # if past_key_values are passed then cache is already initialized a private flag init_cache has to be passed down to ensure cache is used. It has to be made sure that cache is marked as mutable so that it can be changed by FlaxGPTJAttention module
+        # if past_key_values are passed then cache is already initialized a private flag init_cache has to be passed down to 
+        # ensure cache is used. It has to be made sure that cache is marked as mutable so that it can be changed by FlaxGPTJAttention module
         if past_key_values:
             inputs["cache"] = past_key_values
             mutable = ["cache"]
@@ -1014,11 +1012,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         
     def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
-        print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
+        print(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape}')
         if masks is not None:
-            print(f'masks: {masks.shape}')
+            print(f'Masks: {masks.shape}')
         else:
-            print(f'masks: None')
+            print(f'Masks: None')
 
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
@@ -1058,11 +1056,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         # 泄露报错：jax._src.traceback_util.UnfilteredStackTrace: jax._src.errors.UnexpectedTracerError: Encountered an unexpected tracer. A function transformed by JAX had a side effect, allowing for a reference to an intermediate value with type uint32[2] wrapped in a DynamicJaxprTracer to escape the scope of the transformation.
 # JAX transformations require that functions explicitly return their outputs, and disallow saving intermediate values to global state.
 # The function being traced when the value leaked was train_step at /home/lishengping/projects/mesh_easy_jax/easylm/llama_model.py:934 traced for pjit.
-        print(f'input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
+        print(f'Eval input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
         if masks is not None:
-            print(f'masks: {masks.shape}')
+            print(f'Masks: {masks.shape}')
         else:
-            print(f'masks: None')
+            print(f'Masks: None')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
@@ -1093,6 +1091,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         opt_state = self.optimizer.init(params)
         return {'params': params, 'opt_state': opt_state, 'step': 0}
 
+    # 根据保存的params实现的
     def recovery_train_state(self):
         for k, v in self.state.items():
             if k == 'opt_state':
@@ -1133,11 +1132,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         if 'step' not in self.shard_fns:
             target.pop('step')
         lastest_step = int(self.mngr.latest_step())
-        print(f'latest step: {lastest_step}')
+        print(f'Latest step: {lastest_step}')
         self.state = self.mngr.restore(lastest_step)
         self.recovery_train_state()
-        print(f'state: {self.state.keys()}')
-        print(f'shard keys: {self.shard_fns.keys()}')
+        print(f'State: {self.state.keys()}')
+        print(f'Shard keys: {self.shard_fns.keys()}')
         self.state = tree_apply(self.shard_fns, self.state)
             
     def init_state(self):
@@ -1157,16 +1156,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                     out_shardings=train_state_partition,
                                     donate_argnums=(0, ),
                         )
-        # self.train_ = pjit(self.train_step,
-        #                   in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp'), PS()),
-        #                   out_shardings=(PS(), PS(), train_state_partition),
-        #                   donate_argnums=(0, ),
-        #                         )
-        # self.eval_ = pjit(self.eval_step,
-        #                   in_shardings=(train_state_partition, PS(None, 'dp'), PS(None, 'dp'), PS(None, 'dp')),
-        #                   out_shardings=(PS(), PS()),
-        #                 #   donate_argnums=(0, ),
-        #                         )
         self.train_ = pjit(self.train_step,
                           in_shardings=(train_state_partition, PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS(None, ('dp', 'fsdp')), PS()),
                           out_shardings=(PS(), PS(), train_state_partition),
@@ -1186,15 +1175,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         dp = thread_resources.env.shape['dp']
         mp = thread_resources.env.shape['mp']
         fsdp = thread_resources.env.shape['fsdp']
-        seq = self.config.seq
         vocab = self.config.vocab_size
-        print('init state============')
-        print(f'jax.host_count(): {jax.process_count()}')
-
-        example_shape = (max(dp, 1), seq,)
-        print(f'example_shape: {example_shape}')
+        print('============Init state============')
+        example_shape = (max(dp, 1), self.config.seq)
+        print(f'Example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
-        head_print("in shape", x.shape)
         head_print("dp", dp)
         head_print("fsdp", fsdp)
         head_print("mp", mp)
@@ -1212,7 +1197,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             start = time.time()
             print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
             if self.config.load_mode == 'orbax':
-                print(f'load_mode1: {self.config.load_mode}')
+                print(f'Load_mode1: {self.config.load_mode}')
                 # init orbax async checkpointer and load latest checkpoint
                 self.load_orbax_async_checkpoint()
             else:

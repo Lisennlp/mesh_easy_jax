@@ -27,7 +27,7 @@ class CausalTransformerShard(hk.Module):
 
         heads = config["n_heads"]
         shards = config["cores_per_replica"]
-        layer_count = config["layers"]
+        layer_count = config["num_hidden_layers"]
 
         self.transformer_layers = []
         self.heads = heads
@@ -413,17 +413,17 @@ class CausalTransformerV2:  # XDC: do not have a seperate model class like Causa
             return EmbeddingShardV2(config)(x)
 
         def residual(x, mask):
-            out = x + TransformerLayerShardV2(config, init_scale=2. / config["layers"])(x, mask)
+            out = x + TransformerLayerShardV2(config, init_scale=2. / config["num_hidden_layers"])(x, mask)
             return maybe_shard(out, P("dp", None, "mp"))
 
         def init_decode(x, given_length, mask):
-            residual, decode_state = TransformerLayerShardV2(config, init_scale=2. / config["layers"])\
+            residual, decode_state = TransformerLayerShardV2(config, init_scale=2. / config["num_hidden_layers"])\
                 .get_init_decode_state(x, given_length, mask)
             out = x + residual
             return maybe_shard(out, P("dp", None, "mp")), decode_state
 
         def iter_decode(decode_state, x):
-            residual, decode_state = TransformerLayerShardV2(config, init_scale=2. / config["layers"])\
+            residual, decode_state = TransformerLayerShardV2(config, init_scale=2. / config["num_hidden_layers"])\
                 .decode_once(decode_state, x, 0)
             out = x + residual
             return maybe_shard(out, P("dp", None, "mp")), decode_state
@@ -453,7 +453,7 @@ class CausalTransformerV2:  # XDC: do not have a seperate model class like Causa
                 return P(None, parallel)
 
             # a transformer layer
-            elif shape_dtype.shape[0] == config["layers"]:
+            elif shape_dtype.shape[0] == config["num_hidden_layers"]:
                 if shape_dtype.ndim == 2:
                     # a channel wise variable (e.g. layernorm parameters)
                     # replicate it for speed
@@ -485,7 +485,7 @@ class CausalTransformerV2:  # XDC: do not have a seperate model class like Causa
 
             e_key, t_key, p_key = jax.random.split(key, 3)
 
-            input_shape = (config["layers"],) + x.shape + (config["d_model"],)
+            input_shape = (config["num_hidden_layers"],) + x.shape + (config["d_model"],)
 
             params = {
                 "embed": embed_init_fn(e_key, x),
