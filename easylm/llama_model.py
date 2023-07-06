@@ -51,7 +51,6 @@ from orbax import checkpoint
 from flax.serialization import (
     from_bytes, to_bytes, to_state_dict, from_state_dict
 )
-from log_utils import logger
 
 
 remat = nn_partitioning.remat
