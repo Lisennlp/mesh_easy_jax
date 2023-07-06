@@ -551,8 +551,7 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
-
-        # lsp: 256M
+        # lsp: batch:8 -> 256M
         attn_weights = dot_product_attention_weights(
             xq,
             xk,
@@ -565,7 +564,7 @@ class FlaxLLaMAAttention(nn.Module):
         )
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
-        # lsp: 256M
+        # lsp: batch:8 -> 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
 
         attn_output = self._merge_heads(attn_output)
