@@ -9,12 +9,13 @@
   "resid_pdrop": 0.05,
   "intermediate_size": 11008,
   "transformation": "pjit", 
-  "layers": 32,
+  "layers": 2,
   "d_model": 4096,
   "n_heads": 32,
   "n_vocab": 32000,
   "norm": "rmsnorm",
   "pe": "rotary",
+  "rotay_from": "easylm",
   "pe_rotary_dims": 64,
   
   "seq": 2048,
@@ -34,7 +35,7 @@
   "tpu_size": 8,
 
   "bucket": "llm_base_models",
-  "model_dir": "orbax_async_easylm",
+  "model_dir": "orbax_async_test",
 
   "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
   "val_set": {

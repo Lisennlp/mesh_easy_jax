@@ -15,6 +15,7 @@
     "n_vocab": 39424,
     "norm": "rmsnorm",
     "pe": "rotary",
+    "rotay_from": "easylm",
     "pe_rotary_dims": 64,
     
     "seq": 2048,

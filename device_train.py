@@ -157,6 +157,8 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
+    params['rotary_from'] = params.get('rotary_from', 'easylm')
+
     if int(args.version) == 3:
         update_llama_params(params)
 

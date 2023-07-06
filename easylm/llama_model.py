@@ -325,20 +325,45 @@ def precompute_freqs_cis(dim: int, end: int, theta: float=10000.0, dtype: jnp.dt
     freqs_cis = np.complex64(cos + 1j * sin)
     return jnp.asarray(freqs_cis)
 
-def precompute_freqs_cis_praxis(dim: int, end: int, theta: float=10000.0, dtype: jnp.dtype=jnp.float32, min_timescale=1.0):
-    min_timescale = 1.0
-    fraction = 2 * jnp.arange(0, dim // 2) / dim
-    timescale = (
-        min_timescale
-        * (theta / min_timescale) ** fraction
-    )
-    position = jnp.arange(end, dtype=dtype)[jnp.newaxis, :]
-    position = position[:, :, jnp.newaxis, jnp.newaxis]
-    timescale = timescale[jnp.newaxis, jnp.newaxis, jnp.newaxis, :]
-    sinusoid_inp = (position / timescale).astype(dtype)
-    sin = jnp.sin(sinusoid_inp)
-    cos = jnp.cos(sinusoid_inp)
-    return sin, cos
+
+def apply_rotary_emb(
+    xq: jnp.ndarray,
+    xk: jnp.ndarray,
+    freqs_cis: jnp.ndarray,
+    dtype: jnp.dtype=jnp.float32,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+
+    reshape_xq = xq.astype(jnp.float32).reshape(*xq.shape[:-1], -1, 2)
+    reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
+
+    xq_ = jax.lax.complex(reshape_xq[..., 0], reshape_xq[..., 1])
+    xk_ = jax.lax.complex(reshape_xk[..., 0], reshape_xk[..., 1])
+
+    # add head dim
+    freqs_cis = jnp.reshape(freqs_cis, (*freqs_cis.shape[:2], 1, *freqs_cis.shape[2:]))
+    print()
+    xq_out = xq_ * freqs_cis
+    xq_out = jnp.stack((jnp.real(xq_out), jnp.imag(xq_out)), axis=-1).reshape(*xq_out.shape[:-1], -1)
+
+    xk_out = xk_ * freqs_cis
+    xk_out = jnp.stack((jnp.real(xk_out), jnp.imag(xk_out)), axis=-1).reshape(*xk_out.shape[:-1], -1)
+
+    return xq_out.astype(dtype), xk_out.astype(dtype)
+
+# def precompute_freqs_cis_praxis(dim: int, end: int, theta: float=10000.0, dtype: jnp.dtype=jnp.float32, min_timescale=1.0):
+#     min_timescale = 1.0
+#     fraction = 2 * jnp.arange(0, dim // 2) / dim
+#     timescale = (
+#         min_timescale
+#         * (theta / min_timescale) ** fraction
+#     )
+#     position = jnp.arange(end, dtype=dtype)[jnp.newaxis, :]
+#     position = position[:, :, jnp.newaxis, jnp.newaxis]
+#     timescale = timescale[jnp.newaxis, jnp.newaxis, jnp.newaxis, :]
+#     sinusoid_inp = (position / timescale).astype(dtype)
+#     sin = jnp.sin(sinusoid_inp)
+#     cos = jnp.cos(sinusoid_inp)
+#     return sin, cos
 
 def apply_rotary_emb_praxis(
     inputs: jnp.ndarray,
@@ -371,30 +396,6 @@ def apply_rotary_emb_praxis(
     final = jnp.stack((first_part, second_part), axis=-1).reshape(*first_part.shape[:-1], -1).astype(dtype)
     # stack和concatenate不同
     return final
-
-# def apply_rotary_emb(
-#     xq: jnp.ndarray,
-#     xk: jnp.ndarray,
-#     freqs_cis: jnp.ndarray,
-#     dtype: jnp.dtype=jnp.float32,
-# ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-
-#     reshape_xq = xq.astype(jnp.float32).reshape(*xq.shape[:-1], -1, 2)
-#     reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
-
-#     xq_ = jax.lax.complex(reshape_xq[..., 0], reshape_xq[..., 1])
-#     xk_ = jax.lax.complex(reshape_xk[..., 0], reshape_xk[..., 1])
-
-#     # add head dim
-#     freqs_cis = jnp.reshape(freqs_cis, (*freqs_cis.shape[:2], 1, *freqs_cis.shape[2:]))
-
-#     xq_out = xq_ * freqs_cis
-#     xq_out = jnp.stack((jnp.real(xq_out), jnp.imag(xq_out)), axis=-1).reshape(*xq_out.shape[:-1], -1)
-
-#     xk_out = xk_ * freqs_cis
-#     xk_out = jnp.stack((jnp.real(xk_out), jnp.imag(xk_out)), axis=-1).reshape(*xk_out.shape[:-1], -1)
-
-#     return xq_out.astype(dtype), xk_out.astype(dtype)
 
 
 class FlaxLLaMAAttention(nn.Module):
@@ -446,17 +447,13 @@ class FlaxLLaMAAttention(nn.Module):
 
         self.causal_mask = make_causal_mask(jnp.ones((1, config.max_sequence_length), dtype="bool"), dtype="bool")
 
-        # self.freqs_cis = precompute_freqs_cis(
-        #     self.head_dim,
-        #     config.max_sequence_length * 2,
-        #     dtype=self.dtype,
-        # )
-        self.freqs_cis = precompute_freqs_cis_praxis(
-            self.head_dim,
-            config.max_sequence_length,
-            dtype=self.dtype,
-        )
-
+        if self.config.rotary_from == 'easylm':
+            self.freqs_cis = precompute_freqs_cis(
+                self.head_dim,
+                config.max_sequence_length * 2,
+                dtype=self.dtype,
+            )
+           
     def _split_heads(self, hidden_states):
         return hidden_states.reshape(hidden_states.shape[:2] + (self.num_heads, self.head_dim))
 
@@ -517,11 +514,15 @@ class FlaxLLaMAAttention(nn.Module):
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
-        # lsp
-        # freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
-        # lsp
-        xq = apply_rotary_emb_praxis(xq, position=position_ids, dtype=self.dtype)
-        xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
+
+        if self.config.rotary_from == 'easylm':
+            # lsp easylm
+            freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
+            xq, xk = apply_rotary_emb(xq, xk, freqs_cis, dtype=self.dtype)
+        else:
+            # lsp paxml
+            xq = apply_rotary_emb_praxis(xq, position=position_ids, dtype=self.dtype)
+            xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
 
