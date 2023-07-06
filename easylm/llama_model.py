@@ -1010,11 +1010,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         
     def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
-        logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape}')
+        print(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape}')
         if masks is not None:
-            logger.info(f'Masks: {masks.shape}')
+            print(f'Masks: {masks.shape}')
         else:
-            logger.info(f'Masks: None')
+            print(f'Masks: None')
 
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
@@ -1054,11 +1054,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         # 泄露报错：jax._src.traceback_util.UnfilteredStackTrace: jax._src.errors.UnexpectedTracerError: Encountered an unexpected tracer. A function transformed by JAX had a side effect, allowing for a reference to an intermediate value with type uint32[2] wrapped in a DynamicJaxprTracer to escape the scope of the transformation.
 # JAX transformations require that functions explicitly return their outputs, and disallow saving intermediate values to global state.
 # The function being traced when the value leaked was train_step at /home/lishengping/projects/mesh_easy_jax/easylm/llama_model.py:934 traced for pjit.
-        logger.info(f'Eval input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
+        print(f'Eval input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
         if masks is not None:
-            logger.info(f'Masks: {masks.shape}')
+            print(f'Masks: {masks.shape}')
         else:
-            logger.info(f'Masks: None')
+            print(f'Masks: None')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
@@ -1130,11 +1130,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         if 'step' not in self.shard_fns:
             target.pop('step')
         lastest_step = int(self.mngr.latest_step())
-        logger.info(f'Latest step: {lastest_step}')
+        print(f'Latest step: {lastest_step}')
         self.state = self.mngr.restore(lastest_step)
         self.recovery_train_state()
-        logger.info(f'State: {self.state.keys()}')
-        logger.info(f'Shard keys: {self.shard_fns.keys()}')
+        print(f'State: {self.state.keys()}')
+        print(f'Shard keys: {self.shard_fns.keys()}')
         self.state = tree_apply(self.shard_fns, self.state)
             
     def init_state(self):
@@ -1174,13 +1174,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         mp = thread_resources.env.shape['mp']
         fsdp = thread_resources.env.shape['fsdp']
         vocab = self.config.vocab_size
-        logger.info('============Init state============')
+        print('============Init state============')
         example_shape = (max(dp, 1), self.config.seq)
-        logger.info(f'Example_shape: {example_shape}')
+        print(f'Example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
-        logger.info("dp", dp)
-        logger.info("fsdp", fsdp)
-        logger.info("mp", mp)
+        print("dp", dp)
+        print("fsdp", fsdp)
+        print("mp", mp)
         self.gen_length = 1
         self.rng = next_rng()
 
@@ -1193,15 +1193,15 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
         if self.config.load_checkpoint:
             start = time.time()
-            logger.info(f'Start load pretrained weight -> {self.config.load_checkpoint}')
+            print(f'Start load pretrained weight -> {self.config.load_checkpoint}')
             if self.config.load_mode == 'orbax':
-                logger.info(f'Load_mode1: {self.config.load_mode}')
+                print(f'Load_mode1: {self.config.load_mode}')
                 # init orbax async checkpointer and load latest checkpoint
                 self.load_orbax_async_checkpoint()
             else:
-                logger.info(f'load_mode: {self.config.load_mode}')
+                print(f'load_mode: {self.config.load_mode}')
                 if 'train_state' in self.config.load_checkpoint[0]:
-                    logger.info(f'Loading train_state')
+                    print(f'Loading train_state')
                     self.state, _ = self.checkpointer.load_trainstate_checkpoint(
                                                                                 load_from=self.config.load_checkpoint, 
                                                                                 trainstate_target=None,
@@ -1210,7 +1210,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                     # 为什么要进行恢复参数，因为self.train_的pjit编译的时候，对self.state进行的donate（加入缓冲区）节省内存，加快速度。
                     self.recovery_train_state()
                 else:
-                    logger.info(f'Loading params')
+                    print(f'Loading params')
                     _, restored_params = self.checkpointer.load_trainstate_checkpoint(
                                                                                 load_from=self.config.load_checkpoint, 
                                                                                 trainstate_target=train_state_shapes['params'],
@@ -1219,13 +1219,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                     self.state = self.init_from_params(restored_params)
                     del restored_params
                     # jax.lib.xla_bridge.get_backend().defragment()
-            logger.info(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
+            print(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
-            logger.info(f'Train model from scrath!!!')
+            print(f'Train model from scrath!!!')
             self.state = self.init_(self.rng)
 
         param_count = hk.data_structures.tree_size(self.state['params'])
-        logger.info(f"Total parameters: {param_count}")
+        print(f"Total parameters: {param_count}")
         
     def train(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
@@ -1242,13 +1242,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 
     def write_ckpt(self, path=None, shard=None):
         start = time.time()
-        logger.info(f'Start to save model: ‘{path}’')
+        print(f'Start to save model: ‘{path}’')
         if self.config.save_mode == 'orbax':
             self.mngr.save(self.state['step'].item(), self.state)
             # self.mngr.wait_until_finished()
         else:
             self.checkpointer.save_all(self.state, self.gather_fns, model_dir=path)
-        logger.info(f'Model save finished. take time: {time.time() - start}')
+        print(f'Model save finished. take time: {time.time() - start}')
 
     def __call__(
         self,
