@@ -108,11 +108,13 @@ def search_newest_step_orbax(params):
     response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
     step_map_path = {}
     for path in response.stdout.decode('utf-8').split('\n'):
-        step = re.findall('\d+', path)
+        step = re.findall('/(\d+)/', path)
         if step:
             step_map_path[int(step[0])] = os.path.split(path)[0]
     step_map_path = sorted(step_map_path.items())
+    logger.info(f'step_map_path: {step_map_path}')
     return step_map_path[-1][0], model_dir
+
 
 
 def parse_args():
@@ -196,7 +198,7 @@ if __name__ == "__main__":
                     k: load_tfrecord_dataset(index_fname=v, 
                                             batch_size=(1, val_batch_size), 
                                             seq_len=params['seq'], 
-                                            repeat=int(2.5 * eopch_num)) 
+                                            repeat=int(20 * eopch_num)) 
                     for k, v in params['val_set'].items()
                                     }
         # ==== init =====
