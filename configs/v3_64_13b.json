@@ -39,9 +39,9 @@
               "test": "gs://jax_llm_data/data-ziya/dreamily_translation_general.test.tfrecords"
     },
   
-    "val_batches": 1000,
-    "val_every": 1500,
-    "ckpt_every": 1500,
+    "val_batches": 300,
+    "val_every": 1000,
+    "ckpt_every": 1000,
     "keep_every": 3000,
   
     "name": "llama13b_finetune",
