@@ -217,7 +217,7 @@ class LLaMAConfig2(PretrainedConfig):
 
     @staticmethod
     def get_jax_mesh(axis_dims):
-        return get_jax_mesh(axis_dims, ('dp', 'mp'))
+        return get_jax_mesh(axis_dims, ('dp', 'fsdp','mp'))
 
     @staticmethod
     def get_partition_rules():
