@@ -1,5 +1,5 @@
 {
-    "dp": 1,
+    "dp": 2,
     "fsdp": 8,
     "mp": 4,
     "load_mode": "easylm",
@@ -18,7 +18,7 @@
     "seq": 2048,
     "cores_per_replica": 8,
     "per_replica_batch": 16,
-    "gradient_accumulation_steps": 2,
+    "gradient_accumulation_steps": 1,
     "seed": 42,
   
     "epoch_num": 3,
@@ -40,8 +40,8 @@
     },
   
     "val_batches": 300,
-    "val_every": 500,
-    "ckpt_every": 500,
+    "val_every": 1000,
+    "ckpt_every": 1000,
     "keep_every": 3000,
   
     "name": "llama7b_finetune",
