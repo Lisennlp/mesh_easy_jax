@@ -40,8 +40,8 @@
     },
   
     "val_batches": 300,
-    "val_every": 1000,
-    "ckpt_every": 1000,
+    "val_every": 500,
+    "ckpt_every": 500,
     "keep_every": 3000,
   
     "name": "llama7b_finetune",
