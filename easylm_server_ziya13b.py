@@ -57,7 +57,7 @@ FLAGS_DEF = {
 }
 
 
-vocab_file = '/home/lishengping/models/ziya-13b/tokenizer.model'
+vocab_file = 'tokenizer.model'
 
 tokenizer = LLaMATokenizer(
             vocab_file=vocab_file,
@@ -248,7 +248,7 @@ def server():
         if decoded_output:
             decoded_output = decoded_output[1:] if decoded_output[0] in [':', '：'] else decoded_output
         format_outputs.append(decoded_output)
-        history = input_texts[i].rstrip() + '\n\n' + decoded_output.lstrip()
+        history = input_texts[i].rstrip() + '\n' + decoded_output.lstrip()
         format_histories.append(history)
     print(f'output: {format_outputs}')
     return jsonify({
