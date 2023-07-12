@@ -28,8 +28,6 @@ def setup_logger(host_id):
     logger = CustomLogger('my_logger')
     logger.setLevel(logging.DEBUG)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
     # 只把主节点的日志写入到bucket
     if host_id == 0:
         log_filename = f"gs://jax_llm_logs/train_log_{current_time}_{host_id}.txt"
