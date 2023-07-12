@@ -38,14 +38,17 @@ print(f'devices: {jax.devices()}\n\n')
 
 
 # ====================================================================================
+# 选择需要启动的配置文件索引
+config_indexes = [0, 1]
+
 # 启动server的相关配置
 configs = [
     {
         'model_name': 'ziya-13b',
         'bucket_name': 'llm_base_models',
         'model_path': 'Ziya-LLaMA-13B-Pretrain-v1-easylm',
-        'vocab_file': '/home/lishengping/projects/mesh_easy_jax/configs/ziya/tokenizer.model',
-        'config': '/home/lishengping/projects/mesh_easy_jax/configs/ziya/8-13b.json',
+        'vocab_file': 'configs/ziya/tokenizer.model',
+        'config': 'configs/ziya/8-13b.json',
         'load_step': 9002,
     
     },
@@ -53,11 +56,12 @@ configs = [
         'model_name': 'baichuan-7b',
         'bucket_name': 'llm_base_models',
         'model_path': 'baichuan-7B-easylm',
-        'vocab_file': '/home/lishengping/projects/mesh_easy_jax/configs/baichuan/tokenizer.model',
-        'config': '/home/lishengping/projects/mesh_easy_jax/configs/baichuan/8-7b.json',
+        'vocab_file': 'configs/baichuan/tokenizer.model',
+        'config': 'configs/baichuan/8-7b.json',
         'load_step': None,
     }
 ]
+configs = [configs[i] for i in config_indexes]
 # ====================================================================================
 
 
