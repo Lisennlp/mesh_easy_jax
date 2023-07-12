@@ -12,8 +12,6 @@ import datetime
 import numpy as np
 import wandb
 from tqdm import tqdm
-from lm_eval import evaluator, tasks
-from tasks.eval_harness import EvalHarnessAdaptor
 import tensorflow as tf
 from google.cloud import storage
 import jax

@@ -6,7 +6,6 @@ import re
 import dataclasses
 import random
 
-import dill
 import flax
 import jax
 import jax.numpy as jnp
