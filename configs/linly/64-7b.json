@@ -1,5 +1,5 @@
 {
-    "dp": 1,
+    "dp": 2,
     "fsdp": 8,
     "mp": 4,
     "load_mode": "orbax",
@@ -29,7 +29,7 @@
     "weight_decay": 0.001,
     "warmup_ratio": 0.02,
   
-    "tpu_size": 32,
+    "tpu_size": 64,
   
     "bucket": "llm_base_models",
     "model_dir": "orbax_async_easylm",
@@ -39,11 +39,11 @@
               "test": "gs://jax_llm_data/dreamily_translation_general.test.tfrecords"
     },
   
-    "val_batches": 3000,
-    "val_every": 3000,
-    "ckpt_every": 3000,
+    "val_batches": 300,
+    "val_every": 1000,
+    "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "llama7b_finetune",
+    "name": "32-7b",
     "wandb_project": "Linli-chinese-llama-finetune"
   }

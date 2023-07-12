@@ -1,8 +1,8 @@
 {
-    "dp": 2,
-    "fsdp": 8,
-    "mp": 4,
-    "load_mode": "orbax",
+    "dp": 1,
+    "fsdp": 1,
+    "mp": 8,
+    "load_mode": "ea",
     "save_mode": "orbax",
     "embd_pdrop": 0.1,
     "resid_pdrop": 0.05,
@@ -13,23 +13,23 @@
     "num_attention_heads": 40,
     "vocab_size": 39424,
     "norm": "rmsnorm",
-    "rotary_from": "easylmm",
+    "rotay_from": "easylmm",
     
     "seq": 2048,
     "cores_per_replica": 8,
-    "per_replica_batch": 16,
-    "gradient_accumulation_steps": 1,
+    "per_replica_batch": 4,
+    "gradient_accumulation_steps": 4,
     "seed": 42,
   
     "epoch_num": 3,
-    "anneal_steps": 19499,
-    "total_steps": 58497,
+    "anneal_steps": 23863,
+    "total_steps": 71589,
     "lr": 8e-6,
     "end_lr": 8e-7,
     "weight_decay": 0.001,
     "warmup_ratio": 0.02,
   
-    "tpu_size": 64,
+    "tpu_size": 8,
   
     "bucket": "llm_base_models",
     "model_dir": "Ziya-LLaMA-13B-Pretrain-v1-easylm",
@@ -44,6 +44,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "llama13b_finetune",
+    "name": "32-13b",
     "wandb_project": "ziya-chinese-llama-finetune"
   }
