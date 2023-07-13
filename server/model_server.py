@@ -36,16 +36,11 @@ from log_utils import setup_logger
 
 
 jax.distributed.initialize()
-
 logger = setup_logger(jax.process_index(), prefix='server')
-
 # 命令行传入config path
 config_path = sys.argv[1]
-
 configs = json.load(open(config_path, 'r'))
-# 创建一个字典
 model_objs = {n: types.SimpleNamespace(**config)  for n, config in configs.items()}
-# ====================================================================================
 logger.info(f'model_objs:\n{model_objs}\n')
 
 # config
@@ -57,17 +52,13 @@ FLAGS_DEF = {
     'num_beams': 1,
     'max_new_tokens': 1280,
     'seed': 42,
-    'initialize_jax_distributed': False,
     'mesh_dim': '1,1,8',
     'dtype': 'bf16',
     'input_length': 768,
-    'seq_length': 2048,
     'add_bos_token': False,
-    'load_llama_config': '',
-    'load_checkpoint': '',
 }
-
 logger.info(f'FLAGS_DEF: {FLAGS_DEF}')
+
 
 def update_params(params, config):
     for k, v in params.items():
@@ -118,7 +109,7 @@ for name, model_obj in model_objs.items():
         else:
             params = train_state
         model_ps = match_partition_rules(LLaMAConfig.get_partition_rules(), params)
-        shard_fns, _ = make_shard_and_gather_fns(model_ps, get_float_dtype_by_name('bf16'))
+        shard_fns, _ = make_shard_and_gather_fns(model_ps, get_float_dtype_by_name(FLAGS_DEF['dtype']))
 
         model_obj.params = params
         model_obj.model_ps = model_ps
