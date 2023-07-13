@@ -294,7 +294,8 @@ def server():
     decoded_outputs, _ = generate(format_texts, temperature, model_name, rng=jax.random.PRNGKey(seed))
 
     if decoded_outputs is None:
-        response['error'] = f'model name must in ‘{model_objs.keys()}’...'
+        response['text'] = input_texts
+        response['error_message'] = f'model name must in ‘{model_objs.keys()}’...'
         response['code'] = 400
         return jsonify(response)
 
