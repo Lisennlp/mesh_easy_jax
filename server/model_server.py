@@ -37,33 +37,11 @@ from log_utils import setup_logger
 
 jax.distributed.initialize()
 
-
 logger = setup_logger(jax.process_index(), prefix='server')
-# ====================================================================================
-# 选择需要启动的配置文件索引
-# run_model_names = ['ziya-13b', 'baichuan-7b']
-# run_model_names = ['baichuan-7b']
-# 启动server的相关配置
-# configs = {
-#         'ziya-13b':{
-#                 'model_name': 'ziya-13b',
-#                 'bucket_name': 'llm_base_models',
-#                 'model_dir': 'Ziya-LLaMA-13B-Pretrain-v1-easylm',
-#                 'vocab_file': 'configs/ziya/tokenizer.model',
-#                 'config': 'configs/ziya/8-13b.json',
-#                 'load_step': 20002,
-#                     },
-#         'baichuan-7b': {
-#                 'model_name': 'baichuan-7b',
-#                 'bucket_name': 'llm_base_models',
-#                 'model_dir': 'baichuan-7B-easylm',
-#                 'vocab_file': 'configs/baichuan/tokenizer.model',
-#                 'config': 'configs/baichuan/8-7b.json',
-#                 'load_step': None,
-#     }
-# }
+
 # 命令行传入config path
 config_path = sys.argv[1]
+
 configs = json.load(open(config_path, 'r'))
 # 创建一个字典
 model_objs = {n: types.SimpleNamespace(**config)  for n, config in configs.items()}
@@ -243,7 +221,6 @@ for name, model_obj in model_objs.items():
                     )
 
 app = Flask(__name__)
-
 
 response = {
             'text': '',
