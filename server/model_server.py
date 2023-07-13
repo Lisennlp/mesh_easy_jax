@@ -168,7 +168,8 @@ def get_jax_mesh(axis_dims, names):
 
 mesh_dim = FLAGS_DEF['mesh_dim']
 mesh = get_jax_mesh(mesh_dim, names=('dp', 'fsdp', 'mp'))
-set_random_seed(42)
+set_random_seed(FLAGS_DEF['seed'])
+
 for name, model_obj in model_objs.items():
     start = time.time()
     with mesh:
