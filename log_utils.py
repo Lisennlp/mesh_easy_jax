@@ -33,7 +33,7 @@ def setup_logger(host_id):
         log_filename = f"gs://jax_llm_logs/train_log_{current_time}_{host_id}.txt"
     else:
         log_filename = f"log_{current_time}_{host_id}.txt"
-    file_handler = logging.FileHandler(log_filename)
+    file_handler = CustomHandler(log_filename)
     file_handler.setLevel(logging.DEBUG)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)

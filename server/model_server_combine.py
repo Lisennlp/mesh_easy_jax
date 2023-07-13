@@ -49,7 +49,7 @@ configs = [
         'model_path': 'Ziya-LLaMA-13B-Pretrain-v1-easylm',
         'vocab_file': 'configs/ziya/tokenizer.model',
         'config': 'configs/ziya/8-13b.json',
-        'load_step': 9002,
+        'load_step': None,
     
     },
 {
