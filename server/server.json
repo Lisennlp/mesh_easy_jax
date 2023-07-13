@@ -1,0 +1,18 @@
+{
+"ziya-13b":{
+            "model_name": "ziya-13b",
+            "bucket_name": "llm_base_models",
+            "model_dir": "Ziya-LLaMA-13B-Pretrain-v1-easylm",
+            "vocab_file": "configs/ziya/tokenizer.model",
+            "config": "configs/ziya/8-13b.json",
+            "load_step": 20002
+                },
+"baichuan-7b": {
+            "model_name": "baichuan-7b",
+            "bucket_name": "llm_base_models",
+            "model_dir": "baichuan-7B-easylm",
+            "vocab_file": "configs/baichuan/tokenizer.model",
+            "config": "configs/baichuan/8-7b.json",
+            "load_step": false
+}
+}

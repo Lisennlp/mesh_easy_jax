@@ -24,13 +24,13 @@ class CustomHandler(logging.FileHandler):
         else:
             return open(self.baseFilename, self.mode, encoding=self.encoding)
 
-def setup_logger(host_id):
+def setup_logger(host_id, prefix='train'):
     logger = CustomLogger('my_logger')
     logger.setLevel(logging.DEBUG)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     # 只把主节点的日志写入到bucket
     if host_id == 0:
-        log_filename = f"gs://jax_llm_logs/train_log_{current_time}_{host_id}.txt"
+        log_filename = f"gs://jax_llm_logs/{prefix}_log_{current_time}_{host_id}.txt"
     else:
         log_filename = f"log_{current_time}_{host_id}.txt"
     file_handler = CustomHandler(log_filename)

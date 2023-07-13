@@ -32,77 +32,43 @@ from easylm.jax_utils import (
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
+from log_utils import setup_logger
+
 
 jax.distributed.initialize()
-print(f'devices: {jax.devices()}\n\n')
 
 
+logger = setup_logger(jax.process_index(), prefix='server')
 # ====================================================================================
 # 选择需要启动的配置文件索引
-config_indexes = [0, 1]
-
+# run_model_names = ['ziya-13b', 'baichuan-7b']
+# run_model_names = ['baichuan-7b']
 # 启动server的相关配置
-configs = [
-    {
-        'model_name': 'ziya-13b',
-        'bucket_name': 'llm_base_models',
-        'model_path': 'Ziya-LLaMA-13B-Pretrain-v1-easylm',
-        'vocab_file': 'configs/ziya/tokenizer.model',
-        'config': 'configs/ziya/8-13b.json',
-        'load_step': None,
-    
-    },
-{
-        'model_name': 'baichuan-7b',
-        'bucket_name': 'llm_base_models',
-        'model_path': 'baichuan-7B-easylm',
-        'vocab_file': 'configs/baichuan/tokenizer.model',
-        'config': 'configs/baichuan/8-7b.json',
-        'load_step': None,
-    }
-]
-configs = [configs[i] for i in config_indexes]
+# configs = {
+#         'ziya-13b':{
+#                 'model_name': 'ziya-13b',
+#                 'bucket_name': 'llm_base_models',
+#                 'model_dir': 'Ziya-LLaMA-13B-Pretrain-v1-easylm',
+#                 'vocab_file': 'configs/ziya/tokenizer.model',
+#                 'config': 'configs/ziya/8-13b.json',
+#                 'load_step': 20002,
+#                     },
+#         'baichuan-7b': {
+#                 'model_name': 'baichuan-7b',
+#                 'bucket_name': 'llm_base_models',
+#                 'model_dir': 'baichuan-7B-easylm',
+#                 'vocab_file': 'configs/baichuan/tokenizer.model',
+#                 'config': 'configs/baichuan/8-7b.json',
+#                 'load_step': None,
+#     }
+# }
+# 命令行传入config path
+config_path = sys.argv[1]
+configs = json.load(open(config_path, 'r'))
+# 创建一个字典
+model_objs = {n: types.SimpleNamespace(**config)  for n, config in configs.items()}
 # ====================================================================================
-
-
-class CustomLogger(logging.Logger):
-    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
-        if extra is None:
-            extra = {}
-        extra['host_id'] = jax.process_index()
-        super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
-
-def setup_logger(host_id):
-    logger = CustomLogger('server_logger')
-    logger.setLevel(logging.DEBUG)
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
-    log_filename = f"logs/server_log_{current_time}_{host_id}.txt"
-    file_handler = logging.FileHandler(log_filename)
-    file_handler.setLevel(logging.DEBUG)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s-%(filename)s-%(host_id)s] - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    return log_filename, logger
-
-log_filename, logger = setup_logger(jax.process_index())
-
-def upload_to_bucket():
-    command = f'gsutil cp {log_filename} gs://jax_llm_logs/'
-    response = subprocess.run(command, stdout=subprocess.PIPE, shell=True)
-    print(f'Upload file success...')
-
-
-# 创建一个列表
-model_objs = []
-for config in configs:
-    model_objs.append(types.SimpleNamespace(**config))
-
+logger.info(f'model_objs:\n{model_objs}\n')
 
 # config
 FLAGS_DEF = {
@@ -141,7 +107,7 @@ def update_extra_params(config):
     
         
 item = {'params': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())}
-for i, model_obj in enumerate(model_objs):
+for name, model_obj in model_objs.items():
 #     if i == 0: continue
     start = time.time()
     model_obj.tokenizer = LLaMATokenizer(
@@ -155,17 +121,19 @@ for i, model_obj in enumerate(model_objs):
                 truncation_side='left',
             )
     model_obj.user_params = json.load(open(model_obj.config, 'r'))
-    model_obj.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_obj.bucket_name}/{model_obj.model_path}', item)
-    
+    if model_obj.bucket_name:
+        model_obj.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_obj.bucket_name}/{model_obj.model_dir}', item)
+    else:
+        model_obj.mngr = orbax.checkpoint.CheckpointManager(f'{model_obj.model_dir}', item)
     with jax.default_device(jax.devices("cpu")[0]):
         llama_config = LLaMAConfig2.get_default_config()
         update_params(model_obj.user_params, llama_config)
         update_extra_params(llama_config)
         model_obj.hf_model = FlaxLLaMAForCausalLM(llama_config, input_shape=(1, 2048), seed=42, _do_init=False)
-        if model_obj.load_step is None:
-            load_step = model_obj.mngr.latest_step()
-        else:
+        if model_obj.load_step:
             load_step = model_obj.load_step
+        else:
+            load_step = model_obj.mngr.latest_step()
         logger.info(f'load step: {load_step}')
         train_state = model_obj.mngr.restore(int(load_step))
         if train_state['params'].get('params', None) is not None:
@@ -202,26 +170,15 @@ def get_jax_mesh(axis_dims, names):
 mesh_dim = FLAGS_DEF['mesh_dim']
 mesh = get_jax_mesh(mesh_dim, names=('dp', 'fsdp', 'mp'))
 set_random_seed(42)
-for i, model_obj in enumerate(model_objs):
+for name, model_obj in model_objs.items():
     start = time.time()
     with mesh:
         model_obj.params = tree_apply(model_obj.shard_fns, model_obj.params)
-        sharded_rng = next_rng()
     logger.info(f'put to {model_obj.model_name} device time: {time.time() - start}')
 
 
-def generate(text, temperature, model_name):
-    global sharded_rng
-    if model_name == 'baichuan-7b':
-        model_index = 1
-    elif model_name == 'ziya-13b':
-        model_index = 0
-    else:
-        return None, None
-    if len(model_objs) == 1:
-        logger.info(f'Warning: model index < len(model_objs)!!!! now auto set model_index to 0...')
-        model_index = 0
-    model_obj = model_objs[model_index]
+def generate(text, temperature, model_name, rng):
+    model_obj = model_objs[model_name]
     inputs = model_obj.prefix_tokenizer(
         text,
         padding='max_length',
@@ -239,8 +196,8 @@ def generate(text, temperature, model_name):
         attention_mask=input_mask,
     )
     with mesh:
-        output, sharded_rng = model_obj.compile_generate(
-                model_obj.params, sharded_rng, batch, temperature
+        output = model_obj.compile_generate(
+                model_obj.params, rng, batch, temperature
             )
         output = jax.device_get(output)
     output_text = []
@@ -253,15 +210,15 @@ def generate(text, temperature, model_name):
 
 
 # 如果改变tokp和topk，需要重新编译，因为这两个参数会改变函数的输出size
-def forward_generate(params, rng, batch, temperature, MODEL_INDEX=0):
+def forward_generate(params, rng, batch, temperature, model_name='ziya-13b'):
     batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
-    rng_generator = JaxRNG(rng)
+    # rng_generator = JaxRNG(rng)
     logger.info(f'batch shape: {batch["input_tokens"].shape}')
-    output = model_objs[MODEL_INDEX].hf_model.generate(
+    output = model_objs[model_name].hf_model.generate(
         batch['input_tokens'],
         attention_mask=batch['attention_mask'],
         params=params,
-        prng_key=rng_generator(),
+        prng_key=rng,
         logits_processor=FlaxLogitsProcessorList(
             [FlaxTemperatureLogitsWarper(temperature)]
         ),
@@ -276,28 +233,25 @@ def forward_generate(params, rng, batch, temperature, MODEL_INDEX=0):
             top_p=FLAGS_DEF['top_p'],
         )
     ).sequences[:, batch['input_tokens'].shape[1]:]
-    return output, rng_generator()
+    return output
 
 # 编译
-for i, model_obj in enumerate(model_objs):
-    model_obj.compile_generate = pjit(partial(forward_generate, MODEL_INDEX=i),
+for name, model_obj in model_objs.items():
+    model_obj.compile_generate = pjit(partial(forward_generate, model_name=name),
                      in_shardings=(model_obj.model_ps, PS(), PS(('dp', 'fsdp')), PS()),
-                    out_shardings=(PS(), PS())
+                    out_shardings=(PS())
                     )
 
 app = Flask(__name__)
 
-# 请求计数
-COUNT = 0
-
 @app.route('/generate', methods=['POST'])
 def server():
-    global COUNT
-    COUNT += 1
     request_json = request.json
     input_texts = request_json['text']
     temperature = request_json.get('temperature', 0.1)
     model_name = request_json.get('model_name', 'baichuan-7b')
+    seed = request_json.get('seed', 42)
+
     assert model_name in ['ziya-13b', 'baichuan-7b']
 
     logger.info(f'request_json: \n{request_json}')
@@ -325,8 +279,8 @@ def server():
     for i in range(len(input_texts)):
         inp = histories[i] + input_texts[i]
         format_texts.append(inp)
-
-    decoded_outputs, _ = generate(format_texts, temperature, model_name)
+    
+    decoded_outputs, _ = generate(format_texts, temperature, model_name, rng=jax.random.PRNGKey(seed))
 
     if decoded_outputs is None:
         response = {
@@ -356,9 +310,6 @@ def server():
                 'max_new_tokes': FLAGS_DEF['max_new_tokens'],
                 'code': 200}
     logger.info(f'response:\n{response}\n\n\n')
-
-    if COUNT % 10 == 0:
-        upload_to_bucket()
 
     return jsonify(response)
 
