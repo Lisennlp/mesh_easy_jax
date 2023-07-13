@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import json
 import tempfile
 import time
+import math
 
 import numpy as np
 import jax
@@ -510,14 +511,15 @@ class FlaxLLaMAAttention(nn.Module):
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
 
-        if self.config.rotary_from == 'easylm':
-            # lsp easylm
-            freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
-            xq, xk = apply_rotary_emb(xq, xk, freqs_cis, dtype=self.dtype)
-        else:
-            # lsp paxml
-            xq = apply_rotary_emb_praxis(xq, position=position_ids, dtype=self.dtype)
-            xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
+        if not self.config.alibi:
+            if self.config.rotary_from == 'easylm':
+                # lsp easylm
+                freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
+                xq, xk = apply_rotary_emb(xq, xk, freqs_cis, dtype=self.dtype)
+            else:
+                # lsp paxml
+                xq = apply_rotary_emb_praxis(xq, position=position_ids, dtype=self.dtype)
+                xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
 
@@ -532,9 +534,13 @@ class FlaxLLaMAAttention(nn.Module):
 
         batch_size = hidden_states.shape[0]
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
-
+        # batch * len
+        # attention_mask: batch 
         attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-        attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
+        if self.config.alibi:
+            attention_mask = combine_masks(attention_mask, causal_mask)
+        else:
+            attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
 
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
@@ -546,12 +552,18 @@ class FlaxLLaMAAttention(nn.Module):
             xk, xv, attention_mask = self._concatenate_to_cache(xk, xv, xq, attention_mask)
 
         # transform boolean mask into float mask
+        # >0用0.0赋值，否则用jnp.finfo(self.dtype).min赋值
         attention_bias = lax.select(
             attention_mask > 0,
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
+       
         # lsp: batch:8 -> 256M
+        # q, k作为 q.math
+        # query = query / jnp.sqrt(depth).astype(dtype) -> depth: head_dim
+        # attn_weights = jnp.einsum('...qhd,...khd->...hqk', query, key, precision=precision)
+        # attn_weights: b * n_head * q * k
         attn_weights = dot_product_attention_weights(
             xq,
             xk,
@@ -562,6 +574,11 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
+        if self.config.alibi:
+            # fcm_mask : n_head * seq * seq
+            fcm_mask = fcm_mask[jnp.newaxis, ...]
+            print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
+            attn_weights += fcm_mask
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: batch:8 -> 256M
@@ -846,6 +863,39 @@ class FlaxLLaMABlockCollection(nn.Module):
             block(self.config, name=str(i), dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision) for i in range(self.config.num_hidden_layers)
         ]
 
+    def _get_interleave(self, n):
+        def _get_interleave_power_of_2(n):
+            start = (2 ** (-2 ** -(math.log2(n) - 3)))
+            ratio = start
+            return [start * ratio ** i for i in range(n)]
+
+        if math.log2(n).is_integer():
+            return _get_interleave_power_of_2(n)
+        else:
+            closest_power_of_2 = 2 ** math.floor(math.log2(n))
+            return _get_interleave_power_of_2(closest_power_of_2) + _get_interleave(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
+
+
+    def _fill_with_neg_inf(self, t):
+            return jax.lax.select(t.astype(self.dtype) > 0, 
+                            jnp.full(t.shape, 0.0, dtype=self.dtype), 
+                            jnp.full(t.shape, jnp.finfo(self.dtype).min))
+
+
+    def _gen_alibi_mask(self, n_head, max_pos):
+        slopes = jnp.array(self._get_interleave(n_head)).astype(self.dtype)
+        # n_head: head数量,  n_head * 1 * 1
+        slopes = slopes[..., jnp.newaxis, jnp.newaxis]
+        # 1 * 1 * position_len
+        position = jnp.arange(max_pos, dtype=self.dtype)[jnp.newaxis, jnp.newaxis, ...]
+        alibi = jnp.broadcast_to(slopes * position, (n_head, 1, max_pos))
+        alibi_mask = jnp.triu(
+            self._fill_with_neg_inf(jnp.zeros([max_pos, max_pos])), 1
+        )
+        alibi_mask = jnp.expand_dims(alibi_mask, axis=(0, )) + alibi
+        return alibi_mask
+
+
     def __call__(
         self,
         hidden_states,
@@ -864,7 +914,7 @@ class FlaxLLaMABlockCollection(nn.Module):
             # Apply forgetful causal mask
             batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
             fcm_ratio = jax.random.uniform(
-                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
+                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1), 
                 minval=self.config.fcm_min_ratio,
                 maxval=self.config.fcm_max_ratio
             )
@@ -876,6 +926,10 @@ class FlaxLLaMABlockCollection(nn.Module):
             fcm_mask = fcm_mask.astype('bool')
         else:
             fcm_mask = None
+
+        if self.config.alibi:
+            fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, self.config.seq - 1)
+            # print(f'fcm_mask: {fcm_mask} dtype: {fcm_mask.dtype}')
 
         for block in self.blocks:
             if output_hidden_states:
@@ -1078,9 +1132,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def init_fn(self, rng):
         rng_generator = JaxRNG(rng)
         params = self.init(
-            input_ids=jnp.zeros((4, self.config.seq), dtype=jnp.int32),
-            position_ids=jnp.zeros((4, self.config.seq), dtype=jnp.int32),
-            attention_mask=jnp.ones((4, self.config.seq), dtype=jnp.int32),
+            input_ids=jnp.zeros((4, self.config.seq - 1), dtype=jnp.int32),
+            position_ids=jnp.zeros((4, self.config.seq - 1), dtype=jnp.int32),
+            attention_mask=jnp.ones((4, self.config.seq - 1), dtype=jnp.int32),
             rngs=rng_generator(self.config.rng_keys),
         )
         opt_state = self.optimizer.init(params)
@@ -1172,7 +1226,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         fsdp = thread_resources.env.shape['fsdp']
         vocab = self.config.vocab_size
         logger.info('============Init state============')
-        example_shape = (max(dp, 1), self.config.seq)
+        example_shape = (max(dp, 1), self.config.seq - 1)
         logger.info(f'Example_shape: {example_shape}')
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=vocab).astype(jnp.uint32)  # batch, len
         logger.info(f'dp: {dp}')

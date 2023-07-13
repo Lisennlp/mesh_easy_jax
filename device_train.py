@@ -73,6 +73,7 @@ DEFAULT_PARAMS = {
     'save_mode': 'orbax',
     'skip_step': 0,
     'load_checkpoint': [],
+    'alibi': False,
 }
 
 

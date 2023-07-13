@@ -1,4 +1,6 @@
 {
+  "gradient_checkpointing": "",
+  "alibi": true,
   "dp": 1,
   "fsdp": 1,
   "mp": 8,
@@ -44,6 +46,6 @@
   "ckpt_every": 3000,
   "keep_every": 3000,
 
-  "name": "llama7b_finetune",
-  "wandb_project": "Linli-chinese-llama-finetune"
+  "name": "8-test",
+  "wandb_project": "model_debug"
 }
