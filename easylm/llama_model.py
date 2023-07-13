@@ -1307,8 +1307,10 @@ class FlaxLLaMAForCausalLM(FlaxLLaMAPreTrainedModel):
         extended_attention_mask = jnp.ones((batch_size, max_length), dtype="i4")
         if attention_mask is not None:
             position_ids = attention_mask.cumsum(axis=-1) - 1
+            # attention_mask上的值，赋值到extended_attention_mask上，其实索引为0，如果不为0，attention_mask的shape和extended_attention_mask一样的话，也是按照0开始的
             extended_attention_mask = lax.dynamic_update_slice(extended_attention_mask, attention_mask, (0, 0))
         else:
+            # broadcast_to多个卡引用，只会保存一份副本
             position_ids = jnp.broadcast_to(jnp.arange(seq_length, dtype="i4")[None, :], (batch_size, seq_length))
 
         return {

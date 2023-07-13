@@ -108,7 +108,6 @@ def update_extra_params(config):
         
 item = {'params': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())}
 for name, model_obj in model_objs.items():
-#     if i == 0: continue
     start = time.time()
     model_obj.tokenizer = LLaMATokenizer(
                     vocab_file=model_obj.vocab_file,
@@ -244,15 +243,27 @@ for name, model_obj in model_objs.items():
 
 app = Flask(__name__)
 
+
+response = {
+            'text': '',
+            'history': '',
+            'temperature': 0.1,
+            'top_p': FLAGS_DEF['top_p'],
+            'top_k': FLAGS_DEF['top_k'],
+            'max_new_tokes': FLAGS_DEF['max_new_tokens'],
+            'code': 0
+        }
+
 @app.route('/generate', methods=['POST'])
 def server():
     request_json = request.json
     input_texts = request_json['text']
-    temperature = request_json.get('temperature', 0.1)
-    model_name = request_json.get('model_name', 'baichuan-7b')
+    temperature = request_json.get('temperature', FLAGS_DEF['temperature'])
+    model_name = request_json.get('model_name', list(model_objs.keys())[0])
     seed = request_json.get('seed', 42)
 
-    assert model_name in ['ziya-13b', 'baichuan-7b']
+    response['temperature'] = temperature
+    assert model_name in model_objs
 
     logger.info(f'request_json: \n{request_json}')
 
@@ -283,14 +294,8 @@ def server():
     decoded_outputs, _ = generate(format_texts, temperature, model_name, rng=jax.random.PRNGKey(seed))
 
     if decoded_outputs is None:
-        response = {
-            'error': 'model name must in [ziya-13b, baichuan-7b]...',
-            'history': [],
-            'temperature': temperature,
-            'top_p': FLAGS_DEF['top_p'],
-            'top_k': FLAGS_DEF['top_k'],
-            'max_new_tokes': FLAGS_DEF['max_new_tokens'],
-            'code': 400}
+        response['error'] = f'model name must in ‘{model_objs.keys()}’...'
+        response['code'] = 400
         return jsonify(response)
 
     format_outputs = []
@@ -301,14 +306,11 @@ def server():
         format_outputs.append(decoded_output)
         history = input_texts[i].rstrip() + '\n' + decoded_output.lstrip()
         format_histories.append(history)
-    response = {
-                'text': format_outputs,
-                'history': format_histories,
-                'temperature': temperature,
-                'top_p': FLAGS_DEF['top_p'],
-                'top_k': FLAGS_DEF['top_k'],
-                'max_new_tokes': FLAGS_DEF['max_new_tokens'],
-                'code': 200}
+    
+    response['text'] = format_outputs
+    response['history'] = format_histories
+    response['code'] = 200
+
     logger.info(f'response:\n{response}\n\n\n')
 
     return jsonify(response)
