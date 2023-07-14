@@ -41,6 +41,7 @@ wandb.login(key='7988c805dfe3fed4d6e4017f616555a5160fd2c2')
 
 DEFAULT_PARAMS = {
     # model
+    'scratch': False,
     'num_hidden_layers': 32,
     'rng_keys': ('params', 'dropout', 'fcm'),
     'gradient_checkpointing': 'nothing_saveable',
@@ -166,6 +167,11 @@ if __name__ == "__main__":
             params['skip_step'], params['load_checkpoint'] = search_newest_step_orbax(params)
         else:
             params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
+
+    if params['scratch']:
+        logger.info(f'Scratch is true, model would be train from scratch')
+        params['load_checkpoint'] = []
+        params['skip_step'] = 0
 
     logger.info(f'Version: {args.version}\nparams: {params}')
 

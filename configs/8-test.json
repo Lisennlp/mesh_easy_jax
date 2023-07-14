@@ -1,4 +1,5 @@
 {
+  "scratch": false,
   "gradient_checkpointing": "",
   "alibi": true,
   "dp": 1,

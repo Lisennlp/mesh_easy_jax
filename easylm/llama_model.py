@@ -577,7 +577,7 @@ class FlaxLLaMAAttention(nn.Module):
         if self.config.alibi:
             # fcm_mask : n_head * seq * seq
             fcm_mask = fcm_mask[jnp.newaxis, ...]
-            print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
+            # print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
             attn_weights += fcm_mask
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
@@ -1273,7 +1273,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                     # jax.lib.xla_bridge.get_backend().defragment()
             logger.info(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
-            logger.info(f'Train model from scrath!!!')
+            logger.info(f'Train model from scratch!!!')
             self.state = self.init_(self.rng)
 
         param_count = hk.data_structures.tree_size(self.state['params'])
