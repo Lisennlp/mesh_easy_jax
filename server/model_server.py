@@ -45,7 +45,7 @@ logger.info(f'model_objs:\n{model_objs}\n')
 
 # config
 FLAGS_DEF = {
-    'temperatrue': 0.2,
+    'temperature': 0.2,
     'top_k': 30,
     'top_p': 0.9,
     'do_sample': True,
