@@ -581,10 +581,14 @@ class FlaxLLaMAAttention(nn.Module):
             attn_weights += fcm_mask
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
+        # lsp: paxml
+        # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), None, "mp", None))
+
         # lsp: batch:8 -> 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
-
         attn_output = self._merge_heads(attn_output)
+        # lsp: paxml ?
+        # attn_output = with_sharding_constraint(attn_output, PS(("dp", "fsdp"),  None, "mp"))
         attn_output = self.wo(attn_output)
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
@@ -692,6 +696,8 @@ class FlaxLLaMABlock(nn.Module):
             ffn_norm,
             deterministic=deterministic,
         )
+        # lsp: ?
+        # feed_forward_hidden_states = with_sharding_constraint(feed_forward_hidden_states, PS(("dp", "fsdp"), None, "mp"))
         hidden_states = hidden_states + feed_forward_hidden_states
 
         return (hidden_states,) + attn_outputs[1:]
@@ -1170,23 +1176,38 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 self.state[k] = FrozenDict(v)
 
     def init_mngr(self, model_dir):
-        item = {
+        self.item = {
                 'opt_state': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
                 'params': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
                 'step': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.ArrayCheckpointHandler()),
                 }
-        self.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_dir}', item)
+        self.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_dir}', self.item)
         
     def load_orbax_async_checkpoint(self):
         if 'step' not in self.shard_fns:
             target.pop('step')
         lastest_step = int(self.mngr.latest_step())
         logger.info(f'Latest step: {lastest_step}')
-        self.state = self.mngr.restore(lastest_step)
-        self.recovery_train_state()
-        logger.info(f'State: {self.state.keys()}')
-        logger.info(f'Shard keys: {self.shard_fns.keys()}')
-        self.state = tree_apply(self.shard_fns, self.state)
+        try:
+            self.state = self.mngr.restore(lastest_step)
+            self.recovery_train_state()
+            logger.info(f'State: {self.state.keys()}')
+            logger.info(f'Shard keys: {self.shard_fns.keys()}')  # step, params, opt_states
+            self.state = tree_apply(self.shard_fns, self.state)
+
+        except Exception as error:
+            logger.info(f'Load error: {error}!!! now pop ‘opt_state’ key and load it again...')
+            # del opt_state key, because load 0 step model has not this key.
+            self.item.pop('opt_state')
+            self.state = self.mngr.restore(lastest_step)
+            self.recovery_train_state()
+            logger.info(f'State params: {self.state["params"].keys()}') # params
+            logger.info(f'Shard params keys: {self.shard_fns["params"].keys()}')  # params, step
+            restored_params = tree_apply(self.shard_fns['params'], self.state['params'])
+            self.state = self.init_from_params(restored_params)
+            del restored_params
+            # but save model need key:opt_state
+            self.item['opt_state'] = orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())
             
     def init_state(self):
         self.config = LLaMAConfig(**self.config)
