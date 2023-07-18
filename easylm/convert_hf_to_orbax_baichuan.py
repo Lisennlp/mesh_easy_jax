@@ -24,7 +24,7 @@ else:
 
 parser = argparse.ArgumentParser(description='hf to orbax format script')
 
-parser.add_argument('--read_dir', type=str, help='Need to be converted model weight dir. it is a dir')
+parser.add_argument('--read_dir', type=str, help='Need to be converted model weight dir. it is a dir, stong recomand use local dir instead of cloud bucket.')
 parser.add_argument('--save_dir', type=str,  help='Save model weight file path, it is a dir.')
 parser.add_argument('--model_size', type=str, default='7b', choices=['7b', '13b', '30b', '65b'], help='model size')
 parser.add_argument('--step', type=int, default=0, help='checkpoint step')
@@ -98,10 +98,11 @@ start = time.time()
 ckpt_paths = sorted(ckpt_paths)
 ckpt = {}
 for i, ckpt_path in enumerate(ckpt_paths):
-    if 'gs:' in ckpt_path:
+    if isinstance(ckpt_path, str):
         with mlxu.open_file(ckpt_path) as fin:
             checkpoint = torch.load(fin, map_location="cpu")
     else:
+        # ckpt_path -> PosixPath对象
         checkpoint = torch.load(ckpt_path, map_location="cpu")
     for k, v in checkpoint.items():
         if k.startswith('model.'):
@@ -144,7 +145,7 @@ jax_weights = {
         },
         'lm_head': {'kernel': ckpt['lm_head.weight'].numpy().transpose()},
     }
-print(f'Convert weight to easylm format finished...')
+print(f'Convert weight to jax format finished...')
 
 item = {
         'opt_state': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
