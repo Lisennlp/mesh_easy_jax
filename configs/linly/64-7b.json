@@ -45,6 +45,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "32-7b",
+    "name": "64-7b",
     "wandb_project": "Linli-chinese-llama-finetune"
   }

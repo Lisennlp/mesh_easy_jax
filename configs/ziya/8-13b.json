@@ -45,6 +45,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "32-13b",
+    "name": "8-13b",
     "wandb_project": "ziya-chinese-llama-finetune"
   }
