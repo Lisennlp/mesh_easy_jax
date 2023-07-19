@@ -46,6 +46,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "64-13b",
+    "name": "128-13b",
     "wandb_project": "baichuan-zh-llama-13b-ft"
   }
