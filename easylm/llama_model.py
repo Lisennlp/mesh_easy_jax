@@ -558,6 +558,13 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
+        if self.config.alibi:
+            # fcm_mask : n_head * seq * seq  ||  attention_bias: bsz * num_heads *seq * seq
+            fcm_mask = fcm_mask[jnp.newaxis, ...]
+            # print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
+            if len(attention_bias.shape) == 3:
+                attention_bias = jnp.expand_dims(attention_bias, axis=(1, ))
+            attention_bias += fcm_mask
        
         # lsp: batch:8 -> 256M
         # q, k作为 q.math
@@ -574,11 +581,7 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        if self.config.alibi:
-            # fcm_mask : n_head * seq * seq
-            fcm_mask = fcm_mask[jnp.newaxis, ...]
-            # print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
-            attn_weights += fcm_mask
+        
         # lsp
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: paxml
