@@ -14,12 +14,12 @@
     "vocab_size": 64000,
     "norm": "rmsnorm",
     "rotary_from": "easylmm",
-    "alibi": false,
+    "alibi": true,
     
     "seq": 2048,
     "cores_per_replica": 8,
     "per_replica_batch": 16,
-    "gradient_accumulation_steps": 2,
+    "gradient_accumulation_steps": 1,
     "seed": 42,
   
     "epoch_num": 3,

@@ -885,7 +885,7 @@ class FlaxLLaMABlockCollection(nn.Module):
             return _get_interleave_power_of_2(n)
         else:
             closest_power_of_2 = 2 ** math.floor(math.log2(n))
-            return _get_interleave_power_of_2(closest_power_of_2) + _get_interleave(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
+            return _get_interleave_power_of_2(closest_power_of_2) + self._get_interleave(2 * closest_power_of_2)[0::2][:n - closest_power_of_2]
 
 
     def _fill_with_neg_inf(self, t):
