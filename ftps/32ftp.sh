@@ -18,7 +18,7 @@ direction=$2
 # 检查传输方向
 if [ "$direction" -eq 0 ]; then
   # 从A传至B
-  gcloud compute tpus tpu-vm scp ${source_dir}/${file_name}  llm-jax-v3-32:${target_dir}/${file_name} --worker all
+  gcloud compute tpus tpu-vm scp ${source_dir}/${file_name}  llm-jax-v3-32-0:${target_dir}/${file_name} --worker all
   echo "文件${file_name}已成功从目录A传输到目录B。"
 elif [ "$direction" -eq 1 ]; then
   # 从B传至A
