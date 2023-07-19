@@ -1,5 +1,5 @@
 {
-    "scratch": "true",
+    "scratch": "false",
     "dp": 2,
     "fsdp": 8,
     "mp": 4,
@@ -46,6 +46,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "0719",
+    "name": "64-13b",
     "wandb_project": "baichuan-chinese-llama-13b-finetune"
   }
