@@ -46,5 +46,5 @@
     "keep_every": 3000,
   
     "name": "8-13b",
-    "wandb_project": "ziya-chinese-llama-finetune"
+    "wandb_project": "ziya-chinese-llama-13b-finetune"
   }

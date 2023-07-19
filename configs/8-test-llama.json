@@ -2,8 +2,8 @@
   "scratch": false,
   "gradient_checkpointing": "",
   "dp": 1,
-  "fsdp": 1,
-  "mp": 8,
+  "fsdp": 4,
+  "mp": 2,
   "load_mode": "orbax",
   "save_mode": "orbax",
   "embd_pdrop": 0.1,
@@ -20,8 +20,8 @@
 
   "seq": 2048,
   "cores_per_replica": 8,
-  "per_replica_batch": 4,
-  "gradient_accumulation_steps": 4,
+  "per_replica_batch": 16,
+  "gradient_accumulation_steps": 1,
   "seed": 42,
 
   "epoch_num": 3,

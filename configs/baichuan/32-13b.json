@@ -46,5 +46,5 @@
     "keep_every": 3000,
   
     "name": "32-13b",
-    "wandb_project": "baichuan-chinese-llama-finetune"
+    "wandb_project": "baichuan-chinese-llama-13b-finetune"
   }
