@@ -558,6 +558,8 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
+        attention_bias = with_sharding_constraint(attention_bias, PS(("dp", "fsdp"), "mp", None, None))
+
         if self.config.alibi:
             # fcm_mask : n_head * seq * seq  ||  attention_bias: bsz * num_heads *seq * seq
             fcm_mask = fcm_mask[jnp.newaxis, ...]
@@ -565,6 +567,7 @@ class FlaxLLaMAAttention(nn.Module):
             if len(attention_bias.shape) == 3:
                 attention_bias = jnp.expand_dims(attention_bias, axis=(1, ))
             attention_bias += fcm_mask
+        
        
         # lsp: batch:8 -> 256M
         # q, k作为 q.math
@@ -938,7 +941,6 @@ class FlaxLLaMABlockCollection(nn.Module):
 
         if self.config.alibi:
             fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, self.config.seq - 1)
-            # print(f'fcm_mask: {fcm_mask} dtype: {fcm_mask.dtype}')
 
         for block in self.blocks:
             if output_hidden_states:
@@ -1294,12 +1296,12 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                                                                 )
                     self.state = self.init_from_params(restored_params)
                     del restored_params
-                    # jax.lib.xla_bridge.get_backend().defragment()
             logger.info(f'Loaded pretrained weight finished!!! take time: {time.time() - start}s')
         else:
             logger.info(f'Train model from scratch!!!')
             self.state = self.init_(self.rng)
-
+        # error: jaxlib.xla_extension.XlaRuntimeError: UNIMPLEMENTED: PJRT C API does not support Defragment
+        # jax.lib.xla_bridge.get_backend().defragment()
         param_count = hk.data_structures.tree_size(self.state['params'])
         logger.info(f"Total parameters: {param_count}")
         
