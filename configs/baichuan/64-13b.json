@@ -1,5 +1,5 @@
 {
-    "scratch": "false",
+    "scratch": false,
     "dp": 2,
     "fsdp": 8,
     "mp": 4,
