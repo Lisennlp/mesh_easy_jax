@@ -1,5 +1,6 @@
 {
-    "dp": 1,
+    "scratch": false,
+    "dp": 4,
     "fsdp": 8,
     "mp": 4,
     "load_mode": "orbax",
@@ -30,7 +31,7 @@
     "weight_decay": 0.001,
     "warmup_ratio": 0.02,
   
-    "tpu_size": 32,
+    "tpu_size": 64,
   
     "bucket": "llm_base_models",
     "model_dir": "baichuan-13b",
@@ -45,6 +46,6 @@
     "ckpt_every": 1000,
     "keep_every": 3000,
   
-    "name": "32-13b",
+    "name": "64-13b",
     "wandb_project": "baichuan-zh-llama-13b-ft"
   }
