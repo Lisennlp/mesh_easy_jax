@@ -20,12 +20,12 @@
     "seq": 2048,
     "cores_per_replica": 8,
     "per_replica_batch": 16,
-    "gradient_accumulation_steps": 1,
+    "gradient_accumulation_steps": 2,
     "seed": 42,
   
     "epoch_num": 3,
-    "anneal_steps": 19499,
-    "total_steps": 58497,
+    "anneal_steps": 9750,
+    "total_steps": 28250,
     "lr": 8e-6,
     "end_lr": 8e-7,
     "weight_decay": 0.001,
@@ -42,8 +42,8 @@
     },
   
     "val_batches": 300,
-    "val_every": 1000,
-    "ckpt_every": 1000,
+    "val_every": 300,
+    "ckpt_every": 300,
     "keep_every": 3000,
   
     "name": "64-13b",
