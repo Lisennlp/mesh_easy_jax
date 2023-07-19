@@ -1,7 +1,7 @@
 {
     "scratch": "true",
     "dp": 2,
-    "fsdp": 4,
+    "fsdp": 8,
     "mp": 4,
     "load_mode": "orbax",
     "save_mode": "orbax",
