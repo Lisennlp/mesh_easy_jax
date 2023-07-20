@@ -6,7 +6,7 @@
             "vocab_file": "configs/ziya/tokenizer.model",
             "config": "configs/ziya/8-13b.json",
             "load_step": 20002
-                },
+            },
 "baichuan-7b": {
             "model_name": "baichuan-7b",
             "bucket_name": "llm_base_models",
@@ -14,5 +14,13 @@
             "vocab_file": "configs/baichuan/tokenizer.model",
             "config": "configs/baichuan/8-7b.json",
             "load_step": false
-}
+            },
+"baichuan-13b": {
+            "model_name": "baichuan-13b",
+            "bucket_name": "llm_base_models",
+            "model_dir": "baichuan-13b",
+            "vocab_file": "configs/baichuan/tokenizer.model",
+            "config": "configs/baichuan/32-13b.json",
+            "load_step": false
+            }
 }

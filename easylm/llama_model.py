@@ -526,10 +526,12 @@ class FlaxLLaMAAttention(nn.Module):
         if self.has_variable("cache", "cached_key"):
             mask_shift = self.variables["cache"]["cache_index"]
             max_decoder_length = self.variables["cache"]["cached_key"].shape[1]
+            # lsp: 从self.causal_mask中取shape：(1, 1, query_length, max_decoder_length) 。 且从索引(0, 0, mask_shift, 0)开始取
             causal_mask = lax.dynamic_slice(
                 self.causal_mask, (0, 0, mask_shift, 0), (1, 1, query_length, max_decoder_length)
             )
         else:
+            mask_shift = None
             causal_mask = self.causal_mask[:, :, :query_length, :key_length]
 
         batch_size = hidden_states.shape[0]
@@ -552,7 +554,7 @@ class FlaxLLaMAAttention(nn.Module):
             xk, xv, attention_mask = self._concatenate_to_cache(xk, xv, xq, attention_mask)
 
         # transform boolean mask into float mask
-        # >0用0.0赋值，否则用jnp.finfo(self.dtype).min赋值
+        # >0用0.0赋值，否则用jnp.finfo(self.dtype).min赋值 attention_mask: 前面为0，后面为负无穷
         attention_bias = lax.select(
             attention_mask > 0,
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
@@ -561,19 +563,25 @@ class FlaxLLaMAAttention(nn.Module):
         attention_bias = with_sharding_constraint(attention_bias, PS(("dp", "fsdp"), "mp", None, None))
 
         if self.config.alibi:
-            # fcm_mask : n_head * seq * seq  ||  attention_bias: bsz * num_heads *seq * seq
-            fcm_mask = fcm_mask[jnp.newaxis, ...]
-            # print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}')
+            # fcm_mask : n_head * qlen * klen  ||  attention_bias: bsz * num_heads * qlen * klen
+            if mask_shift is not None:
+                fcm_mask = lax.dynamic_slice(
+                fcm_mask, (0, mask_shift, 0), (fcm_mask.shape[0], query_length, max_decoder_length)
+            )
+                fcm_mask = fcm_mask[jnp.newaxis, ...]
+            else:
+                fcm_mask = fcm_mask[jnp.newaxis, :, :attention_bias.shape[-2], :attention_bias.shape[-1]]
+            # print(f'fcm_mask: {fcm_mask.dtype} value:\n {fcm_mask[10, 10, 10].item()}') # error
             if len(attention_bias.shape) == 3:
                 attention_bias = jnp.expand_dims(attention_bias, axis=(1, ))
             attention_bias += fcm_mask
-        
-       
+
         # lsp: batch:8 -> 256M
         # q, k作为 q.math
         # query = query / jnp.sqrt(depth).astype(dtype) -> depth: head_dim
         # attn_weights = jnp.einsum('...qhd,...khd->...hqk', query, key, precision=precision)
-        # attn_weights: b * n_head * q * k
+        # attn_weights: b * n_head * qlen * klen
+        # xq: b * qlen * n_head * head_size || xk: b * klen * n_head * head_size
         attn_weights = dot_product_attention_weights(
             xq,
             xk,
@@ -585,7 +593,7 @@ class FlaxLLaMAAttention(nn.Module):
             precision=self.precision,
         )
         
-        # lsp
+        # lsp shape: b * qlen * n_head * klen
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: paxml
         # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), None, "mp", None))
@@ -941,8 +949,8 @@ class FlaxLLaMABlockCollection(nn.Module):
 
         if self.config.alibi:
             # num_head * seq * seq
-            fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, hidden_states.shape[1])
-
+            fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, self.config.seq)
+          
         for block in self.blocks:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
