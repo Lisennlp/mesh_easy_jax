@@ -941,7 +941,7 @@ class FlaxLLaMABlockCollection(nn.Module):
 
         if self.config.alibi:
             # num_head * seq * seq
-            fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, self.config.seq - 1)
+            fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, hidden_states.shape[1])
 
         for block in self.blocks:
             if output_hidden_states:

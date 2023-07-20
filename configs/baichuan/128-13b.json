@@ -24,8 +24,8 @@
     "seed": 42,
   
     "epoch_num": 3,
-    "anneal_steps": 4875,
-    "total_steps": 14625,
+    "anneal_steps": 9750,
+    "total_steps": 28250,
     "lr": 8e-6,
     "end_lr": 8e-7,
     "weight_decay": 0.001,
@@ -42,8 +42,8 @@
     },
   
     "val_batches": 300,
-    "val_every": 500,
-    "ckpt_every": 500,
+    "val_every": 600,
+    "ckpt_every": 600,
     "keep_every": 3000,
   
     "name": "128-13b",
