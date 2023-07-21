@@ -1,7 +1,6 @@
 import re
 import sys
 import os
-import jax
 import time
 from functools import partial
 import json
@@ -13,6 +12,8 @@ import subprocess
 import numpy as np
 import mlxu
 from google.cloud import storage
+import jax
+import jax.numpy as jnp
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as PS
 from jax.sharding import Mesh
@@ -73,28 +74,24 @@ logger.info(f'FLAGS_DEF: {FLAGS_DEF}')
 
 class FlaxPenaltyLogitsWarper(FlaxLogitsWarper):
     """ JIT traceable version of FlaxLogitsWarper that performs penalty."""
-    def __init__(self, penalty, tokenizer):
+    def __init__(self, penalty, eos_token_id):
         self.penalty = penalty
-        self.eos_token_id = tokenizer.eos_token_id
-        self.pad_token_id = tokenizer.pad_token_id
+        self.eos_token_id = eos_token_id
 
+    def _penalty(self, x):
+        return jnp.where(x < 0, x / self.penalty, x * self.penalty)
 
     def __call__(self, input_ids, scores, cur_len):
-        # input_ids = input_ids[:cur_len]
-        # score = jnp.take_along_axis(scores, input_ids, axis=1)
-        # score = jnp.where(score < 0, score * self.penalty, score / self.penalty)
-        # scores = scores.at[jnp.arange(scores.shape[0])[:, None], input_ids].set(score)
-        input_mask = jnp.zeros_like(scores).astype(jnp.bool_)
-        # 为了之后不影响结束符2的概率
-        input_ids = input_ids.at[input_ids == self.eos_token_id].set(0)
-        # 历史出现input_ids的位置进行mask
-        input_mask = input_mask.at[jnp.arange(input_mask.shape[0])[:, None], input_ids].set(True)
-
-        def scale(x):
-            return jnp.where(x > 0, x / self.penalty, x * self.penalty)
-
-        # mask的位置根据score的正负值进行缩放
-        scores = jnp.where(input_mask, scale(scores), scores)
+        score = jnp.take_along_axis(scores, input_ids, axis=1)
+        # 获取惩罚历史id之后的分数，但是结束符也一起惩罚了
+        score = jnp.where(score > 0 , score / self.penalty, score * self.penalty)
+        # 赋值分数
+        scores = scores.at[jnp.arange(scores.shape[0])[:, None], input_ids].set(score)
+        # 还原结束符的概率
+        # scores = jnp.where(jnp.broadcast_to(jnp.arange(scores.shape[1]), scores.shape) == self.eos_token_id, 
+        #                             self._penalty(scores), 
+        #                             scores)
+        print(f'scores: {scores.shape}')
         return scores
 
 
@@ -184,7 +181,7 @@ for name, model_obj in model_objs.items():
     logger.info(f'put to {model_obj.model_name} device time: {time.time() - start}')
 
 
-def generate(text, temperature, model_name, rng):
+def generate(text, temperature, penalty, model_name, rng):
     model_obj = model_objs[model_name]
     inputs = model_obj.prefix_tokenizer(
         text,
@@ -204,7 +201,7 @@ def generate(text, temperature, model_name, rng):
     )
     with mesh:
         output = model_obj.compile_generate(
-                model_obj.params, rng, batch, temperature
+                model_obj.params, rng, batch, temperature, penalty
             )
         output = jax.device_get(output)
     output_text = []
@@ -217,7 +214,7 @@ def generate(text, temperature, model_name, rng):
 
 
 # 如果改变tokp和topk，需要重新编译，因为这两个参数会改变函数的输出size
-def forward_generate(params, rng, batch, temperature, model_name='ziya-13b'):
+def forward_generate(params, rng, batch, temperature, penalty, model_name='ziya-13b'):
     batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
     # rng_generator = JaxRNG(rng)
     logger.info(f'batch shape: {batch["input_tokens"].shape}')
@@ -228,13 +225,14 @@ def forward_generate(params, rng, batch, temperature, model_name='ziya-13b'):
         prng_key=rng,
         logits_processor=FlaxLogitsProcessorList(
             [FlaxTemperatureLogitsWarper(temperature), 
-            FlaxPenaltyLogitsWarper(FLAGS_DEF['penalty'], tokenizer)]
+            FlaxPenaltyLogitsWarper(penalty, 
+                                    eos_token_id=model_objs[model_name].tokenizer.eos_token_id)]
         ),
         generation_config=GenerationConfig(
             max_new_tokens=FLAGS_DEF['max_new_tokens'], # lsp
-            pad_token_id=model_obj.tokenizer.eos_token_id,
-            bos_token_id=model_obj.tokenizer.bos_token_id,
-            eos_token_id=model_obj.tokenizer.eos_token_id,
+            pad_token_id=model_objs[model_name].tokenizer.eos_token_id,
+            bos_token_id=model_objs[model_name].tokenizer.bos_token_id,
+            eos_token_id=model_objs[model_name].tokenizer.eos_token_id,
             do_sample=FLAGS_DEF['do_sample'],
             num_beams=FLAGS_DEF['num_beams'],
             top_k=FLAGS_DEF['top_k'],
@@ -246,7 +244,7 @@ def forward_generate(params, rng, batch, temperature, model_name='ziya-13b'):
 # 编译
 for name, model_obj in model_objs.items():
     model_obj.compile_generate = pjit(partial(forward_generate, model_name=name),
-                     in_shardings=(model_obj.model_ps, PS(), PS(('dp', 'fsdp')), PS()),
+                     in_shardings=(model_obj.model_ps, PS(), PS(('dp', 'fsdp')), PS(), PS()),
                     out_shardings=(PS())
                     )
 
@@ -258,6 +256,7 @@ response = {
             'temperature': 0.1,
             'top_p': FLAGS_DEF['top_p'],
             'top_k': FLAGS_DEF['top_k'],
+            'penalty': 1.0,
             'max_new_tokes': FLAGS_DEF['max_new_tokens'],
             'code': 0
         }
@@ -269,6 +268,7 @@ def server():
     temperature = request_json.get('temperature', FLAGS_DEF['temperature'])
     model_name = request_json.get('model_name', list(model_objs.keys())[0])
     seed = request_json.get('seed', 42)
+    penalty = request_json.get('penalty', 1.0)
 
     response['temperature'] = temperature
     assert model_name in model_objs
@@ -299,7 +299,7 @@ def server():
         inp = histories[i] + input_texts[i]
         format_texts.append(inp)
     
-    decoded_outputs, _ = generate(format_texts, temperature, model_name, rng=jax.random.PRNGKey(seed))
+    decoded_outputs, _ = generate(format_texts, temperature, penalty, model_name, rng=jax.random.PRNGKey(seed))
 
     if decoded_outputs is None:
         response['text'] = input_texts
