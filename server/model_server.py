@@ -21,7 +21,6 @@ from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
 from transformers import GenerationConfig, FlaxLogitsProcessorList, AutoTokenizer
 import orbax
-from flask import Flask, request, jsonify
 
 sys.path.append('/home/lishengping/projects/mesh_easy_jax')
 
@@ -41,6 +40,8 @@ try:
     __import__('flask')
 except ImportError:
     subprocess.run('pip install flask', stdout=subprocess.PIPE, shell=True)
+
+from flask import Flask, request, jsonify
 
 
 jax.distributed.initialize()
