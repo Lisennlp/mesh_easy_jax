@@ -32,6 +32,8 @@ from easylm.jax_utils import (
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
+from transformers import FlaxLogitsWarper
+
 from log_utils import setup_logger
 
 
@@ -62,8 +64,37 @@ FLAGS_DEF = {
     'dtype': 'bf16',
     'input_length': 768,
     'add_bos_token': False,
+    'penalty': 1.5,
 }
 logger.info(f'FLAGS_DEF: {FLAGS_DEF}')
+
+
+
+class FlaxPenaltyLogitsWarper(FlaxLogitsWarper):
+    """ JIT traceable version of FlaxLogitsWarper that performs penalty."""
+    def __init__(self, penalty, tokenizer):
+        self.penalty = penalty
+        self.eos_token_id = tokenizer.eos_token_id
+        self.pad_token_id = tokenizer.pad_token_id
+
+
+    def __call__(self, input_ids, scores, cur_len):
+        # input_ids = input_ids[:cur_len]
+        # score = jnp.take_along_axis(scores, input_ids, axis=1)
+        # score = jnp.where(score < 0, score * self.penalty, score / self.penalty)
+        # scores = scores.at[jnp.arange(scores.shape[0])[:, None], input_ids].set(score)
+        input_mask = jnp.zeros_like(scores).astype(jnp.bool_)
+        # 为了之后不影响结束符2的概率
+        input_ids = input_ids.at[input_ids == self.eos_token_id].set(0)
+        # 历史出现input_ids的位置进行mask
+        input_mask = input_mask.at[jnp.arange(input_mask.shape[0])[:, None], input_ids].set(True)
+
+        def scale(x):
+            return jnp.where(x > 0, x / self.penalty, x * self.penalty)
+
+        # mask的位置根据score的正负值进行缩放
+        scores = jnp.where(input_mask, scale(scores), scores)
+        return scores
 
 
 def update_params(params, config):
@@ -195,7 +226,8 @@ def forward_generate(params, rng, batch, temperature, model_name='ziya-13b'):
         params=params,
         prng_key=rng,
         logits_processor=FlaxLogitsProcessorList(
-            [FlaxTemperatureLogitsWarper(temperature)]
+            [FlaxTemperatureLogitsWarper(temperature), 
+            FlaxPenaltyLogitsWarper(FLAGS_DEF['penalty'], tokenizer)]
         ),
         generation_config=GenerationConfig(
             max_new_tokens=FLAGS_DEF['max_new_tokens'], # lsp
