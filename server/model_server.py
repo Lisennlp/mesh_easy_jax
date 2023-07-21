@@ -35,6 +35,12 @@ from easylm.jax_utils import (
 from log_utils import setup_logger
 
 
+try:
+    __import__('flask')
+except ImportError:
+    subprocess.run('pip install flask', stdout=subprocess.PIPE, shell=True)
+
+
 jax.distributed.initialize()
 logger = setup_logger(jax.process_index(), prefix='server')
 # 命令行传入config path
