@@ -85,7 +85,7 @@ class FlaxPenaltyLogitsWarper(FlaxLogitsWarper):
         score = jnp.take_along_axis(scores, input_ids, axis=1)
         # 获取惩罚历史id之后的分数，但是结束符也一起惩罚了
         score = jnp.where(score > 0 , score / self.penalty, score * self.penalty)
-        # 赋值分数
+        # 赋值分数，jnp.arange(scores.shape[0])[:, None]代表所有行
         scores = scores.at[jnp.arange(scores.shape[0])[:, None], input_ids].set(score)
         # 还原结束符的概率
         # scores = jnp.where(jnp.broadcast_to(jnp.arange(scores.shape[1]), scores.shape) == self.eos_token_id, 
