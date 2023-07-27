@@ -10,8 +10,6 @@ import logging
 import subprocess
 
 import numpy as np
-import mlxu
-from google.cloud import storage
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit
@@ -20,12 +18,11 @@ from jax.sharding import Mesh
 import flax
 from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
-from transformers import GenerationConfig, FlaxLogitsProcessorList, AutoTokenizer
+from transformers import GenerationConfig, FlaxLogitsProcessorList
 import orbax
 
 sys.path.append('/home/lishengping/projects/mesh_easy_jax')
 
-from easylm.checkpoint import StreamingCheckpointer
 from easylm.llama_model import LLaMAConfig, LLaMAConfig2, FlaxLLaMAForCausalLM, LLaMATokenizer
 from easylm.jax_utils import (
     JaxRNG, next_rng, match_partition_rules, tree_apply,
@@ -319,6 +316,7 @@ def server():
     response['text'] = format_outputs
     response['history'] = format_histories
     response['code'] = 200
+    response['penalty'] = penalty
 
     logger.info(f'response:\n{response}\n\n\n')
 
