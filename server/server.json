@@ -21,6 +21,6 @@
             "model_dir": "baichuan-13b",
             "vocab_file": "configs/baichuan/tokenizer.model",
             "config": "configs/baichuan/32-13b.json",
-            "load_step": false
+            "load_step": 8102
             }
 }

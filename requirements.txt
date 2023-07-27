@@ -8,10 +8,18 @@ torch
 transformers
 -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 jax[tpu]==0.4.10
-optax
 git+https://github.com/deepmind/dm-haiku
-flax==0.6.8
+flax
 tensorflow==2.9.2
-praxis
-# git+https://github.com/xiaoda99/praxis.git@xd/dev
-git+https://github.com/google/orbax/#subdirectory=checkpoint
+# praxis
+git+https://github.com/xiaoda99/praxis.git@xd/dev
+orbax-checkpoint==0.2.2
+
+# paxml
+tensorflow==2.9.2
+tensorflow-text==2.9.0
+tensorflow-datasets==4.8.3
+tfds-nightly==4.8.3.dev202303280045
+tensorflow-metadata==1.12.0
+seqio-nightly
+t5
