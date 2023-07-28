@@ -1,6 +1,5 @@
 {
-  "scratch": false,
-  "gradient_checkpointing": "",
+  "scratch": true,
   "dp": 1,
   "fsdp": 4,
   "mp": 2,

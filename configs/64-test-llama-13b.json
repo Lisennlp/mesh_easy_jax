@@ -1,0 +1,51 @@
+{
+    "scratch": true,
+    "dp": 1,
+    "fsdp": 8,
+    "mp": 8,
+    "load_mode": "orbax",
+    "save_mode": "orbax",
+    "embd_pdrop": 0.1,
+    "resid_pdrop": 0.05,
+    "intermediate_size": 13824,
+    "transformation": "pjit", 
+    "num_hidden_layers": 40,
+    "hidden_size": 5120,
+    "n_heads": 40,
+    "n_vocab": 32000,
+    "norm": "rmsnorm",
+    "rotary_from": "easylmm",
+    "alibi": false,
+    
+    "seq": 2048,
+    "cores_per_replica": 8,
+    "per_replica_batch": 24,
+    "gradient_accumulation_steps": 1,
+    "seed": 42,
+  
+    "epoch_num": 3,
+    "anneal_steps": 23863,
+    "total_steps": 71589,
+    "lr": 8e-6,
+    "end_lr": 8e-7,
+    "weight_decay": 0.001,
+    "warmup_ratio": 0.02,
+  
+    "tpu_size": 64,
+  
+    "bucket": "llm_base_models",
+    "model_dir": "orbax_async_test",
+  
+    "train_set": "gs://jax_llm_data/work_dreamily_translation_general.train.tfrecords",
+    "val_set": {
+              "test": "gs://jax_llm_data/dreamily_translation_general.test.tfrecords"
+    },
+  
+    "val_batches": 2000,
+    "val_every": 3000,
+    "ckpt_every": 3000,
+    "keep_every": 3000,
+  
+    "name": "64-test",
+    "wandb_project": "model_debug"
+  }
