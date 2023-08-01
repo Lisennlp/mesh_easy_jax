@@ -13,7 +13,7 @@ flax
 tensorflow==2.9.2
 # praxis
 # git+https://github.com/xiaoda99/praxis.git@xd/dev
-orbax-checkpoint==0.2.2
+orbax-checkpoint==0.2.6
 
 # paxml
 tensorflow==2.9.2
