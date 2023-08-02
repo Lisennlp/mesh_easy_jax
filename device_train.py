@@ -228,7 +228,7 @@ if __name__ == "__main__":
         skip_step = params['skip_step']
         logger.info(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
         start = time.time()
-        step_time_deque = deque(maxlen=10)
+        step_time_deque = deque(maxlen=5)
         while True:
             step_start = time.time()
             input_data = next(train_dataset)
@@ -238,7 +238,7 @@ if __name__ == "__main__":
                 continue
             loss, acc = model.train(build_sample(input_data, mesh=mesh))
             loss, acc = loss.item(), acc.item()
-            
+
             step_time_deque.append(time.time() - step_start)
 
             if (step % ckpt_every == 0 and step) or step == total_steps:
@@ -272,9 +272,8 @@ if __name__ == "__main__":
                 if jax.process_index() == 0:
                     wandb.log(eval_task_dict, step)
             step += 1
-            
             # steps_per_sec = (step - skip_step) / (time.time() - start)
-            steps_per_sec = round(sum(step_time_deque) / len(step_time_deque), 6)
+            steps_per_sec = round(len(step_time_deque) / sum(step_time_deque), 6)
             tokens_per_sec = tokens_per_step * steps_per_sec
             sequences_processed = sequences_per_step * step
             tokens_processed = tokens_per_step * step
