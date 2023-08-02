@@ -1080,11 +1080,11 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
         
     def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
-        if masks is not None:
-            logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: {masks.shape}')
-        else:
-            logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
-
+        # 减少编译函数内部的print，可以加速一丢丢
+        # if masks is not None:
+        #     logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: {masks.shape}')
+        # else:
+        #     logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
@@ -1101,17 +1101,22 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             new_grad = getattr(jax, 'tree_multimap', jax.tree_map)(lambda a, b: a + b, old_grad, grads)
             return  new_grad, (loss, accuracy)
         
-        if input_tokens.shape[0] == 1:
+        def one_step_grad(x):
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
             (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0], masks[0])
-        else:
+            return (loss.mean(), accuracy.mean()), grads
+        
+        def multi_step_grad(x):
             grads, (loss, accuracy) = jax.lax.scan(microbatch, 
-                                jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),train_state['params']), 
-                                (input_tokens, target_tokens, masks))
-
+                        jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),
+                        train_state['params']), 
+                        (input_tokens, target_tokens, masks))
+            return (loss.mean(), accuracy.mean()), grads
+        # 采用jax的控制流会稍微快些, if input_tokens.shape[0] == 1 true, 执行one_step_grad。None表示传入两个函数的参数
+        (loss, accuracy), grads = jax.lax.cond(input_tokens.shape[0] == 1, one_step_grad, multi_step_grad, None)
         updates, new_opt_state = self.optimizer.update(grads, train_state["opt_state"], train_state["params"])
 
-        return to_f32(loss.mean()), to_f32(accuracy.mean()), { 
+        return to_f32(loss), to_f32(accuracy), { 
             "params": optax.apply_updates(train_state["params"], to_f32(updates)),
             "step": train_state["step"] + 1,
             "opt_state": new_opt_state
@@ -1123,11 +1128,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         # 泄露报错：jax._src.traceback_util.UnfilteredStackTrace: jax._src.errors.UnexpectedTracerError: Encountered an unexpected tracer. A function transformed by JAX had a side effect, allowing for a reference to an intermediate value with type uint32[2] wrapped in a DynamicJaxprTracer to escape the scope of the transformation.
 # JAX transformations require that functions explicitly return their outputs, and disallow saving intermediate values to global state.
 # The function being traced when the value leaked was train_step at /home/lishengping/projects/mesh_easy_jax/easylm/llama_model.py:934 traced for pjit.
-        logger.info(f'Eval input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
-        if masks is not None:
-            logger.info(f'Masks: {masks.shape}')
-        else:
-            logger.info(f'Masks: None')
+        # logger.info(f'Eval input_tokens: {input_tokens.shape} target_tokens: {target_tokens.shape}')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
