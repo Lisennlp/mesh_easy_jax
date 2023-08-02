@@ -500,12 +500,10 @@ class FlaxLLaMAAttention(nn.Module):
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
-        # xq = with_sharding_constraint(xq, PS("dp", None, "mp"))
-        # xk = with_sharding_constraint(xk, PS("dp", None, "mp"))
-        # xv = with_sharding_constraint(xv, PS("dp", None, "mp"))
-        xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
-        xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
-        xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
+        # 加上会稍微耗时一点
+        # xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
+        # xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
+        # xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
 
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
@@ -560,7 +558,7 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
-        attention_bias = with_sharding_constraint(attention_bias, PS(("dp", "fsdp"), "mp", None, None))
+        # attention_bias = with_sharding_constraint(attention_bias, PS(("dp", "fsdp"), "mp", None, None))
 
         if self.config.alibi:
             # fcm_mask : n_head * qlen * klen  ||  attention_bias: bsz * num_heads * qlen * klen
@@ -594,7 +592,7 @@ class FlaxLLaMAAttention(nn.Module):
         )
         
         # lsp shape: b * qlen * n_head * klen
-        attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
+        # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: paxml
         # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), None, "mp", None))
 
