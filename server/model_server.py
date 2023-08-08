@@ -106,7 +106,7 @@ def update_extra_params(config):
     config.output_hidden_states = False
     config.return_dict = True
     
-        
+# orbax.checkpoint.Checkpointer可以不用tpu，但是orbax.checkpoint.AsyncCheckpointer
 item = {'params': orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())}
 for name, model_obj in model_objs.items():
     start = time.time()
