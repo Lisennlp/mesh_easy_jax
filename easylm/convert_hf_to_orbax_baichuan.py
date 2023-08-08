@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(description='hf to orbax format script')
 parser.add_argument('--read_dir', type=str, help='Need to be converted model weight dir. it is a dir, stong recomand use local dir instead of cloud bucket.')
 parser.add_argument('--save_dir', type=str,  help='Save model weight file path, it is a dir.')
 parser.add_argument('--model_size', type=str, default='7b', choices=['7b', '13b', '30b', '65b'], help='model size')
-parser.add_argument('--step', type=int, default=0, help='checkpoint step')
+parser.add_argument('--step', type=int, default=0, help='save checkpoint step')
 
 args = parser.parse_args()
 
