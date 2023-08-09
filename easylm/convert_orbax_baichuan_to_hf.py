@@ -1,5 +1,4 @@
 import jax
-import gc
 import json
 import math
 import os
@@ -47,23 +46,6 @@ LLAMA_STANDARD_CONFIGS = {
         'norm_eps': 1e-5,
     },
 }
-
-def match_keywords(string, positives, negatives):
-    for positive in positives:
-        if positive not in string:
-            return False
-    for negative in negatives:
-        if negative in string:
-            return False
-    return True
-
-def compute_intermediate_size(n):
-    return int(math.ceil(n * 8 / 3) + 255) // 256 * 256
-
-
-def read_json(path):
-    with open(path, "r") as f:
-        return json.load(f)
 
 
 def write_json(text, path):
