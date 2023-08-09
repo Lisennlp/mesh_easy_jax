@@ -1,3 +1,22 @@
+import jax
+import gc
+import json
+import math
+import os
+import shutil
+import argparse
+import time
+
+import jax.numpy as jnp
+import flax
+from flax.traverse_util import flatten_dict
+import torch
+from transformers import LlamaConfig, LlamaForCausalLM
+
+import orbax
+import orbax.checkpoint
+
+
 LLAMA_STANDARD_CONFIGS = {
     '7b': {
         'dim': 4096,
@@ -54,9 +73,6 @@ def write_json(text, path):
 
 def write_model(loaded, model_path, model_size):
     os.makedirs(model_path, exist_ok=True)
-    tmp_model_path = os.path.join(model_path, "tmp")
-    os.makedirs(tmp_model_path, exist_ok=True)
-
     params = LLAMA_STANDARD_CONFIGS[model_size]
 
     n_layers = params["n_layers"]
@@ -93,7 +109,7 @@ def write_model(loaded, model_path, model_size):
         for k, v in state_dict.items():
             index_dict["weight_map"][k] = filename
             param_count += v.numel()
-        torch.save(state_dict, os.path.join(tmp_model_path, filename))
+        torch.save(state_dict, os.path.join(model_path, filename))
     filename = f"pytorch_model-{n_layers + 1}-of-{n_layers + 1}.bin"
     # Unsharded
     state_dict2 = {
@@ -101,13 +117,13 @@ def write_model(loaded, model_path, model_size):
         "model.norm.weight": loaded["transformer.ln_f.kernel"],
         "lm_head.weight": loaded["lm_head.kernel"].transpose(1, 0),
     }
-    for k, v in state_dict.items():
+    for k, v in state_dict2.items():
         index_dict["weight_map"][k] = filename
         param_count += v.numel()
-    torch.save(state_dict2, os.path.join(tmp_model_path, filename))
+    torch.save(state_dict2, os.path.join(model_path, filename))
     # Write configs
     index_dict["metadata"] = {"total_size": param_count * 2}
-    write_json(index_dict, os.path.join(tmp_model_path, "pytorch_model.bin.index.json"))
+    write_json(index_dict, os.path.join(model_path, "pytorch_model.bin.index.json"))
     state_dict2.update(state_dict)
     return state_dict2
 
@@ -135,15 +151,16 @@ def main(read_dir, save_dir, step, model_size):
     
     print(f'Now start convert and write checkpoint...')
     start = time.time()
-    write_model(loaded_w, model_path=save_dir, model_size=model_size)
+    state_dict = write_model(loaded_w, model_path=save_dir, model_size=model_size)
     print(f'Convert and write checkpoint finished, take time: {time.time() - start}s...')
 
 
 if __name__ == '__main__':
     # CPU only
     # pip install torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+    # pip install transformers_stream_generator
     # usage:
-    # python convert_orbax_baichuan_to_hf.py --read_dir gs://llm_base_models/baichuan-13b/ --save_dir ./baichuan-13b --model_size 13b --step 8102
+    # python convert_orbax_baichuan_to_hf.py --read_dir gs://llm_base_models/baichuan-13b/ --save_dir ./baichuan-13b-hf-8102 --model_size 13b --step 8102
     parser = argparse.ArgumentParser(description='orbax to hf format script')
 
     parser.add_argument('--read_dir', type=str, help='Need to be converted model weight dir. it is a dir, stong recomand use local dir instead of cloud bucket.')
