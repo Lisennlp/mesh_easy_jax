@@ -4,7 +4,7 @@ mlxu
 func_timeout
 smart_open[gcs]
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch
+torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu
 transformers
 -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 jax[tpu]==0.4.10
