@@ -102,7 +102,7 @@ def shard(data, batch_size=None):  # XD
     return jax.tree_map(lambda x: x.numpy().reshape(batch_size + x.shape[1:]), data)  # mtj
 
 
-def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, repeat=3):  # XD
+def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, repeat=3, skip_step=0):  # XD
     tf.random.set_seed(42)
     fnames = [index_fname] if index_fname.endswith('.tfrecords') else open(index_fname).read().splitlines()
     ds = tf.data.Dataset.from_tensor_slices(fnames)#.repeat()
@@ -117,6 +117,7 @@ def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, 
                         drop_remainder=True)
     ds = ds.prefetch(10)
     ds = ds.repeat(repeat)
+    ds = ds.skip(skip_step)
     return map(lambda x: shard(x, batch_size=batch_size), iter(ds))
 
 
