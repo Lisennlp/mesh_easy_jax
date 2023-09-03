@@ -163,16 +163,16 @@ if __name__ == "__main__":
     # mesh-transformer-jax
     assert params["pe"] in ["fixed", "rotary", "t5"]
 
-    if int(args.version) == 3:
-        if params['load_mode'] == 'orbax':
-            params['skip_step'], params['load_checkpoint'] = search_newest_step_orbax(params)
-        else:
-            params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
-
     if params['scratch']:
         logger.info(f'Scratch is true, model would be train from scratch')
         params['load_checkpoint'] = []
         params['skip_step'] = 0
+    else:
+        if int(args.version) == 3:
+            if params['load_mode'] == 'orbax':
+                params['skip_step'], params['load_checkpoint'] = search_newest_step_orbax(params)
+            else:
+                params['skip_step'], params['load_checkpoint'] = search_newest_train_state(params)
 
     logger.info(f'Version: {args.version}\nparams: {params}')
 
