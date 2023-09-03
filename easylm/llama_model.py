@@ -1107,6 +1107,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             return (loss.mean(), accuracy.mean()), grads
         
         def multi_step_grad(x):
+            # jax.lax.scan传入的第一个参数执行的是加和，且第一个参数和返回的第一个参数要相同
+            # 返回的第二个参数执行的是cat
             grads, (loss, accuracy) = jax.lax.scan(microbatch, 
                         jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),
                         train_state['params']), 
@@ -1178,15 +1180,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                                 optax._src.base.EmptyState(), 
                                 optax._src.transform.ScaleByAdamState(
                                                                     count=v['2']['count'],
-                                                                    mu=FrozenDict(v['2']['mu']),
-                                                                    nu=FrozenDict(v['2']['nu']),
+                                                                    mu=v['2']['mu'],  # 如果报错的话，要包上FrozenDict
+                                                                    nu=v['2']['nu'],
                                                                         ),
                                 optax._src.base.EmptyState(), 
                                 optax._src.base.EmptyState(), 
                                 optax._src.transform.ScaleByScheduleState(v['2']['count'])
                 )
             elif k == 'params' and isinstance(v, dict):
-                self.state[k] = FrozenDict(v)
+                self.state[k] = v
+            # FrozenDict 如果报错的话，要去掉FrozenDict
 
     def init_mngr(self, model_dir):
         self.item = {
