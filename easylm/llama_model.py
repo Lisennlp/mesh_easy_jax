@@ -304,7 +304,7 @@ class RMSNorm(nn.Module):
             'kernel',
             nn.initializers.ones,
             (self.dim,),
-            self.param_dtype,
+            self.param_dtype, 
         )
 
     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -1014,7 +1014,7 @@ class FlaxLLaMAModule(nn.Module):
         return_dict: bool = True,
     ):
         input_embeds = self.wte(input_ids.astype("i4"))
-
+        print(f'embed_drop_rpob: {self.config.embd_pdrop}====')
         hidden_states = self.dropout(input_embeds, deterministic=deterministic)
 
         outputs = self.h(
@@ -1088,7 +1088,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
             logits = self.apply(
-                params, input_token, deterministic=False,
+                params, input_token, deterministic=False, 
                 rngs=rngs
             ).logits
             return cross_entropy_loss_and_accuracy(
@@ -1146,9 +1146,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         loss, accuracy = loss_and_accuracy(train_state['params'], input_token, target_token, mask=mask)
         return to_f32(loss.mean()), to_f32(accuracy.mean())
 
-    def init_from_params(self, params):
+    def init_from_params(self, params, step=0):
         opt_state = self.optimizer.init(params)
-        return {'params': params, 'opt_state': opt_state, 'step': 0}
+        return {'params': params, 'opt_state': opt_state, 'step': step}
      
     def init_fn(self, rng):
         rng_generator = JaxRNG(rng)
@@ -1220,13 +1220,14 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             logger.info(f'State params: {self.state["params"].keys()}') # params
             logger.info(f'Shard params keys: {self.shard_fns["params"].keys()}')  # params, step
             restored_params = tree_apply(self.shard_fns['params'], self.state['params'])
-            self.state = self.init_from_params(restored_params)
+            self.state = self.init_from_params(restored_params, lastest_step)
             del restored_params
             # but save model need key:opt_state
             self.item['opt_state'] = orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())
             
     def init_state(self):
         self.config = LLaMAConfig(**self.config)
+        print(f'self.config: {self.config}')
         set_random_seed(self.config.seed)
         self.optimizer = self.config.optimizer
         train_state_shapes = jax.eval_shape(self.init_fn, next_rng())
@@ -1269,7 +1270,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         logger.info(f'dp: {dp}')
         logger.info(f"fsdp : {fsdp}")
         logger.info(f"mp: {mp}")
-        self.gen_length = 1
+        self.gen_length = 1 #
         self.rng = next_rng()
 
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
