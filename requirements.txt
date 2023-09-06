@@ -1,25 +1,25 @@
 ray
-wandb
+# wandb
 mlxu
 func_timeout
 smart_open[gcs]
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu
-transformers
--f https://storage.googleapis.com/jax-releases/libtpu_releases.html
-jax[tpu]==0.4.10
+# --extra-index-url https://download.pytorch.org/whl/cpu
+# torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+# transformers
+# -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+# jax[tpu]==0.4.10
 git+https://github.com/deepmind/dm-haiku
-flax
-tensorflow==2.9.2
+# flax
+# tensorflow==2.9.2
 # praxis
 # git+https://github.com/xiaoda99/praxis.git@xd/dev
-orbax-checkpoint==0.2.6
+# orbax-checkpoint==0.2.6
 
-# paxml
-tensorflow==2.9.2
-tensorflow-text==2.9.0
-tensorflow-datasets==4.8.3
-tfds-nightly==4.8.3.dev202303280045
-tensorflow-metadata==1.12.0
-seqio-nightly
-t5
+# # paxml
+# tensorflow==2.9.2
+# tensorflow-text==2.9.0
+# tensorflow-datasets==4.8.3
+# tfds-nightly==4.8.3.dev202303280045
+# tensorflow-metadata==1.12.0
+# seqio-nightly
+# t5
