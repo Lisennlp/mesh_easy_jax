@@ -191,11 +191,12 @@ if __name__ == "__main__":
         wandb_name = params.get("name", "Linli-chinese-llama-finetune")
         wandb.init(project=wandb_project, name=wandb_name, config=params, resume=True)
     host_count = tpu_size // cores_per_replica
+    skip_step = params['skip_step']
+    
     with mesh:
         logger.info(f'Host count: {host_count} Process id: {jax.process_index()}')
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
         logger.info(f'Train_batch_size: {train_batch_size}')
-        skip_step = params['skip_step']
         train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num, skip_step=skip_step)
         val_batch_size = per_replica_batch
         sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
@@ -225,20 +226,15 @@ if __name__ == "__main__":
             model.eval(build_sample(next(val_set), mesh=mesh))
         logger.info(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
-        step = 0
+        step = skip_step
         logger.info(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
         start = time.time()
         step_time_deque = deque(maxlen=5)
         while True:
             step_start = time.time()
             input_data = next(train_dataset)
-            # if step < skip_step:
-            #     step += 1
-            #     start = time.time()
-            #     continue
             loss, acc = model.train(build_sample(input_data, mesh=mesh))
             loss, acc = loss.item(), acc.item()
-
             step_time_deque.append(time.time() - step_start)
 
             if (step % ckpt_every == 0 and step) or step == total_steps:
