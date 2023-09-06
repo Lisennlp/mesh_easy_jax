@@ -5,6 +5,7 @@ import json
 import tempfile
 import time
 import math
+import pickle
 
 import numpy as np
 import jax
@@ -14,7 +15,10 @@ from jax.sharding import PartitionSpec as PS
 import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask
-from flax.linen.attention import dot_product_attention_weights
+# from flax.linen.attention import dot_product_attention_weights
+from flax.linen.dtypes import promote_dtype
+from flax.linen.linear import PrecisionLike
+
 from flax.traverse_util import flatten_dict, unflatten_dict
 from flax.linen import partitioning as nn_partitioning
 from flax.core.frozen_dict import FrozenDict
@@ -55,6 +59,15 @@ from flax.serialization import (
 from log_utils import logger
 
 remat = nn_partitioning.remat
+
+PRNGKey = Any
+Shape = Tuple[int, ...]
+Dtype = Any
+Array = Any
+
+OPT_EMPTY_OBJ = optax._src.base.EmptyState()
+    
+
 
 LLAMA_STANDARD_CONFIGS = {
     '3b': {
@@ -304,14 +317,30 @@ class RMSNorm(nn.Module):
             'kernel',
             nn.initializers.ones,
             (self.dim,),
-            self.param_dtype, 
+            self.param_dtype,
         )
 
+#     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
+#         return x * jax.lax.rsqrt(jnp.square(x).mean(-1, keepdims=True) + self.eps)
     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
-        return x * jax.lax.rsqrt(jnp.square(x).mean(-1, keepdims=True) + self.eps)
+        x_square = jnp.square(x)
+        self.sow('intermediates', 'x_square', x_square[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        x_mean = x_square.mean(-1, keepdims=True)
+        self.sow('intermediates', 'x_mean', x_mean[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        x_eps = x_mean + self.eps
+        self.sow('intermediates', 'x_eps', x_eps[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        x_rsqrt = jax.lax.rsqrt(x_eps)
+        self.sow('intermediates', 'x_rsqrt', x_rsqrt[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        x_cheng = x * x_rsqrt
+        self.sow('intermediates', 'x_cheng', x_cheng[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        return x_cheng
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+#         self.sow('intermediates', 'norm_weight', self.weight,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+#         print(f'self.dtype: {self.dtype} self.eps: {self.eps}')
+#         self.sow('intermediates', 'norm_x', x[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         output = self._norm(x.astype(self.dtype)).astype(self.dtype)
+#         self.sow('intermediates', 'norm_input', output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         weight = jnp.asarray(self.weight, self.dtype)
         return output * weight
 
@@ -487,6 +516,70 @@ class FlaxLLaMAAttention(nn.Module):
             )
             attention_mask = combine_masks(pad_mask, attention_mask)
         return key, value, attention_mask
+    
+    def dot_product_attention_weights(
+        self,
+        query: Array,
+        key: Array,
+        bias: Optional[Array] = None,
+        mask: Optional[Array] = None,
+        broadcast_dropout: bool = True,
+        dropout_rng: Optional[PRNGKey] = None,
+        dropout_rate: float = 0.0,
+        deterministic: bool = False,
+        dtype: Optional[Dtype] = None,
+        precision: PrecisionLike = None,
+    ):
+      query, key = promote_dtype(query, key, dtype=dtype)
+      dtype = query.dtype
+      print(f'precision: {precision} || dtype: {dtype} || dropout_rate: {dropout_rate}')
+      print(f'bias: {bias} || mask: {mask} || deterministic: {deterministic}')
+
+      assert query.ndim == key.ndim, 'q, k must have same rank.'
+      assert query.shape[:-3] == key.shape[:-3], 'q, k batch dims must match.'
+      assert query.shape[-2] == key.shape[-2], 'q, k num_heads must match.'
+      assert query.shape[-1] == key.shape[-1], 'q, k depths must match.'
+
+      # calculate attention matrix
+      depth = query.shape[-1]
+      self.sow('intermediates', '[dot]before_query', query[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+      self.sow('intermediates', '[dot]before_key', key[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+      query = query / jnp.sqrt(depth).astype(dtype)
+      self.sow('intermediates', '[dot]scale_query', query[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+      print(f'querydtype: {query.dtype}')
+      print(f'keydtype: {key.dtype}')
+      # attn weight shape is (batch..., num_heads, q_length, kv_length)
+      attn_weights = jnp.einsum(
+          '...qhd,...khd->...hqk', query, key, precision=precision
+      )
+      self.sow('intermediates', '[dot]attn_weights', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+      # apply attention bias: masking, dropout, proximity bias, etc.
+      if bias is not None:
+        attn_weights = attn_weights + bias
+      # apply attention mask
+      if mask is not None:
+        big_neg = jnp.finfo(dtype).min
+        attn_weights = jnp.where(mask, attn_weights, big_neg)
+
+      # normalize the attention weights
+      self.sow('intermediates', '[dot]attn_weights_mask', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+      attn_weights = jax.nn.softmax(attn_weights).astype(dtype)
+      self.sow('intermediates', '[dot]attn_weights_softmax', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+
+      # apply attention dropout
+      if not deterministic and dropout_rate > 0.0:
+        keep_prob = 1.0 - dropout_rate
+        if broadcast_dropout:
+          # dropout is broadcast across the batch + head dimensions
+          dropout_shape = tuple([1] * (key.ndim - 2)) + attn_weights.shape[-2:]
+          keep = random.bernoulli(dropout_rng, keep_prob, dropout_shape)  # type: ignore
+        else:
+          keep = random.bernoulli(dropout_rng, keep_prob, attn_weights.shape)  # type: ignore
+        multiplier = keep.astype(dtype) / jnp.asarray(keep_prob, dtype=dtype)
+        attn_weights = attn_weights * multiplier
+
+      return attn_weights
 
     def __call__(
         self,
@@ -497,9 +590,9 @@ class FlaxLLaMAAttention(nn.Module):
         init_cache: bool = False,
         output_attentions: bool = False,
         fcm_mask=None,
+        idx=None
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
-
         # 加上会稍微耗时一点
         # xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
         # xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
@@ -508,6 +601,10 @@ class FlaxLLaMAAttention(nn.Module):
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
+        
+        self.sow('intermediates', f'xq_proj{idx}', xq[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.sow('intermediates', f'xk_proj{idx}', xk[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.sow('intermediates', f'xv_proj{idx}', xv[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
 
         if not self.config.alibi:
             if self.config.rotary_from == 'easylm':
@@ -520,6 +617,8 @@ class FlaxLLaMAAttention(nn.Module):
                 xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
+        self.sow('intermediates', f'xq_rotary{idx}', xq[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.sow('intermediates', f'xk_rotary{idx}', xk[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
 
         if self.has_variable("cache", "cached_key"):
             mask_shift = self.variables["cache"]["cache_index"]
@@ -580,7 +679,8 @@ class FlaxLLaMAAttention(nn.Module):
         # attn_weights = jnp.einsum('...qhd,...khd->...hqk', query, key, precision=precision)
         # attn_weights: b * n_head * qlen * klen
         # xq: b * qlen * n_head * head_size || xk: b * klen * n_head * head_size
-        attn_weights = dot_product_attention_weights(
+        self.sow('intermediates', f'attention_mask{idx}', attention_bias[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        attn_weights = self.dot_product_attention_weights(
             xq,
             xk,
             bias=attention_bias,
@@ -590,7 +690,7 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        
+        self.sow('intermediates', f'attn_score_softmax', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         # lsp shape: b * qlen * n_head * klen
         # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: paxml
@@ -598,11 +698,14 @@ class FlaxLLaMAAttention(nn.Module):
 
         # lsp: batch:8 -> 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
+        self.sow('intermediates', f'score_dot_value', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         attn_output = self._merge_heads(attn_output)
         # lsp: paxml ?
         # attn_output = with_sharding_constraint(attn_output, PS(("dp", "fsdp"),  None, "mp"))
         attn_output = self.wo(attn_output)
+        self.sow('intermediates', f'value_post', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
+        self.sow('intermediates', f'value_post_drop', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
         return outputs
 
@@ -643,8 +746,25 @@ class FlaxLLaMAMLP(nn.Module):
         self.dropout = nn.Dropout(rate=self.config.resid_pdrop)
 
     def __call__(self, x: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
-        x = self.w2(nn.silu(self.w1(x)) * self.w3(x))
-        x = self.dropout(x, deterministic=deterministic)
+        ffn1_gate_output = self.w1(x)
+        self.sow('intermediates', f'ffn1_gate_output', ffn1_gate_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+
+        ffn1_gate_output_activ = nn.silu(ffn1_gate_output)
+        self.sow('intermediates', f'ffn1_gate_output_activ', ffn1_gate_output_activ[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+        ffn1_output = self.w3(x)
+        self.sow('intermediates', f'ffn1_output', ffn1_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+        
+        ffn1_output_activ = ffn1_gate_output_activ * ffn1_output
+        self.sow('intermediates', f'ffn1_output_activ', ffn1_output_activ[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+        ffn2_output = self.w2(ffn1_output_activ)
+        self.sow('intermediates', f'ffn2_output', ffn2_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+        x = self.dropout(ffn2_output, deterministic=deterministic)
+        self.sow('intermediates', f'ffn_output', x[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+#         x = self.w2(nn.silu(self.w1(x)) * self.w3(x))
         return x
 
 
@@ -689,8 +809,11 @@ class FlaxLLaMABlock(nn.Module):
         init_cache: bool = False,
         output_attentions: bool = False,
         fcm_mask: Optional[jnp.ndarray] = None,
+        idx=None
     ):
+        self.sow('intermediates', f'input', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         attn_norm = self.attention_norm(hidden_states)
+        self.sow('intermediates', f'input_norm', attn_norm[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         attn_outputs = self.attention(
             attn_norm,
             attention_mask=attention_mask,
@@ -699,19 +822,21 @@ class FlaxLLaMABlock(nn.Module):
             init_cache=init_cache,
             output_attentions=output_attentions,
             fcm_mask=fcm_mask,
+            idx=idx
         )
         attn_output = attn_outputs[0]
+        self.sow('intermediates', f'attn_drop', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         hidden_states = hidden_states + attn_output
-
+        self.sow('intermediates', f'residual_attn_drop', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         ffn_norm = self.ffn_norm(hidden_states)
+        self.sow('intermediates', f'ffn_norm_{idx}', ffn_norm[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         feed_forward_hidden_states = self.feed_forward(
             ffn_norm,
             deterministic=deterministic,
         )
-        # lsp: ?
-        # feed_forward_hidden_states = with_sharding_constraint(feed_forward_hidden_states, PS(("dp", "fsdp"), None, "mp"))
+        self.sow('intermediates', 'ffn_output', feed_forward_hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         hidden_states = hidden_states + feed_forward_hidden_states
-
+        self.sow('intermediates', f'residual_ffn_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         return (hidden_states,) + attn_outputs[1:]
 
 
@@ -949,7 +1074,7 @@ class FlaxLLaMABlockCollection(nn.Module):
             # num_head * seq * seq
             fcm_mask = self._gen_alibi_mask(self.config.num_attention_heads, self.config.seq)
           
-        for block in self.blocks:
+        for i, block in enumerate(self.blocks):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -961,6 +1086,7 @@ class FlaxLLaMABlockCollection(nn.Module):
                 init_cache,
                 output_attentions,
                 fcm_mask,
+                idx=i,
             )
             hidden_states = layer_outputs[0]
 
@@ -1007,15 +1133,18 @@ class FlaxLLaMAModule(nn.Module):
         input_ids,
         attention_mask,
         position_ids,
-        deterministic=True,
+        deterministic=False, # lsp
         init_cache: bool = False,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
     ):
+#         deterministic = Flase
         input_embeds = self.wte(input_ids.astype("i4"))
-        print(f'embed_drop_rpob: {self.config.embd_pdrop}====')
+        self.sow('intermediates', 'input_embeds', input_embeds,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        print(f'deterministic: {deterministic} self.config.embd_pdrop: {self.config.embd_pdrop}')
         hidden_states = self.dropout(input_embeds, deterministic=deterministic)
+        self.sow('intermediates', 'input_embeds_drop', hidden_states,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
 
         outputs = self.h(
             hidden_states,
@@ -1027,10 +1156,10 @@ class FlaxLLaMAModule(nn.Module):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-
         hidden_states = outputs[0]
+        self.sow('intermediates', 'last_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         hidden_states = self.ln_f(hidden_states)
-
+        self.sow('intermediates', 'last_norm', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         if output_hidden_states:
             all_hidden_states = outputs[1] + (hidden_states,)
             outputs = (hidden_states, all_hidden_states) + outputs[2:]
@@ -1079,6 +1208,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             precision=self.precision,
         )
         
+        
     def train_step(self, train_state, input_tokens, target_tokens, masks, rngs):
         # 减少编译函数内部的print，可以加速一丢丢
         # if masks is not None:
@@ -1087,41 +1217,46 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         #     logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无 
-            logits = self.apply(
-                params, input_token, deterministic=False, 
-                rngs=rngs
-            ).logits
-            return cross_entropy_loss_and_accuracy(
-                logits, target_token, valid=mask)
+            output, inter_values = self.apply(
+                params, input_token, deterministic=False,
+                rngs=rngs,
+                mutable=['intermediates'],
+            )
+            logits = output.logits
+            loss, forward_output = cross_entropy_loss_and_accuracy(logits, target_token, valid=mask)
+#             forward_output.update(inter_values)
+            return loss, forward_output
 
         def microbatch(old_grad, batch):
             input_token, target_token, mask= batch
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
-            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_token, target_token, mask)
+            # loss函数返回两个值，第一个值有梯度，第二个值可以随意
+            (loss, forward_output), grads = val_grad_fn(to_bf16(train_state['params']), input_token, target_token, mask)
             new_grad = getattr(jax, 'tree_multimap', jax.tree_map)(lambda a, b: a + b, old_grad, grads)
-            return  new_grad, (loss, accuracy)
+            return  new_grad, (loss.mean(), forward_output)
         
         def one_step_grad(x):
             val_grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
-            (loss, accuracy), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0], masks[0])
-            return (loss.mean(), accuracy.mean()), grads
+            (loss, forward_output), grads = val_grad_fn(to_bf16(train_state['params']), input_tokens[0], target_tokens[0], masks[0])
+            return (loss.mean(), forward_output), grads
         
         def multi_step_grad(x):
             # jax.lax.scan传入的第一个参数执行的是加和，且第一个参数和返回的第一个参数要相同
             # 返回的第二个参数执行的是cat
-            grads, (loss, accuracy) = jax.lax.scan(microbatch, 
+            grads, (loss, forward_output) = jax.lax.scan(microbatch, 
                         jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),
                         train_state['params']), 
                         (input_tokens, target_tokens, masks))
-            return (loss.mean(), accuracy.mean()), grads
+            return (loss, forward_output), grads
         # 采用jax的控制流会稍微快些, if input_tokens.shape[0] == 1 true, 执行one_step_grad。None表示传入两个函数的参数
-        (loss, accuracy), grads = jax.lax.cond(input_tokens.shape[0] == 1, one_step_grad, multi_step_grad, None)
+#         (loss, inter_values), grads = jax.lax.cond(input_tokens.shape[0] == 1, one_step_grad, multi_step_grad, None)
+        (loss, forward_output), grads = one_step_grad(input_tokens.shape[0])
         updates, new_opt_state = self.optimizer.update(grads, train_state["opt_state"], train_state["params"])
-
-        return to_f32(loss), to_f32(accuracy), { 
+        forward_output['loss'] = loss
+        return to_f32(forward_output), None, { 
             "params": optax.apply_updates(train_state["params"], to_f32(updates)),
             "step": train_state["step"] + 1,
-            "opt_state": new_opt_state
+            "opt_state": new_opt_state,
         }
     
     def eval_step(self, train_state, input_tokens, target_tokens, masks):
@@ -1137,18 +1272,21 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 params, input_token, deterministic=True
                 # rngs=rng_generator(self.config.rng_keys),
             ).logits
-            return cross_entropy_loss_and_accuracy(
+            forward_output = cross_entropy_loss_and_accuracy(
                 logits, target_token, valid=mask)
+            return forward_output
+        
         if len(input_tokens.shape) == 3:
             input_token = input_tokens.reshape(-1, input_tokens.shape[-1])
             target_token = target_tokens.reshape(-1, target_tokens.shape[-1])
             mask = masks.reshape(-1, masks.shape[-1])
-        loss, accuracy = loss_and_accuracy(train_state['params'], input_token, target_token, mask=mask)
-        return to_f32(loss.mean()), to_f32(accuracy.mean())
+        forward_output = loss_and_accuracy(train_state['params'], input_token, target_token, mask=mask)
+        token_log_prob = forward_output['token_log_prob']
+        return to_f32(forward_output['loss']), to_f32(forward_output['accuracy'])
 
     def init_from_params(self, params, step=0):
         opt_state = self.optimizer.init(params)
-        return {'params': params, 'opt_state': opt_state, 'step': step}
+        return {'params': params, 'opt_state': opt_state, 'step': step + 1}
      
     def init_fn(self, rng):
         rng_generator = JaxRNG(rng)
@@ -1176,15 +1314,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
                 # 不是很明白保存的优化器为什么是这样
                 # 正好对应optax.chain()的6个位置的对象。
                 self.state[k] = (
-                                optax._src.base.EmptyState(), 
-                                optax._src.base.EmptyState(), 
+                                OPT_EMPTY_OBJ, OPT_EMPTY_OBJ, 
                                 optax._src.transform.ScaleByAdamState(
                                                                     count=v['2']['count'],
                                                                     mu=v['2']['mu'],  # 如果报错的话，要包上FrozenDict
                                                                     nu=v['2']['nu'],
                                                                         ),
-                                optax._src.base.EmptyState(), 
-                                optax._src.base.EmptyState(), 
+                                OPT_EMPTY_OBJ, OPT_EMPTY_OBJ, 
                                 optax._src.transform.ScaleByScheduleState(v['2']['count'])
                 )
             elif k == 'params' and isinstance(v, dict):
@@ -1220,14 +1356,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             logger.info(f'State params: {self.state["params"].keys()}') # params
             logger.info(f'Shard params keys: {self.shard_fns["params"].keys()}')  # params, step
             restored_params = tree_apply(self.shard_fns['params'], self.state['params'])
-            self.state = self.init_from_params(restored_params, lastest_step)
+            self.state = self.init_from_params(restored_params, step=lastest_step)
             del restored_params
             # but save model need key:opt_state
             self.item['opt_state'] = orbax.checkpoint.AsyncCheckpointer(orbax.checkpoint.PyTreeCheckpointHandler())
             
     def init_state(self):
         self.config = LLaMAConfig(**self.config)
-        print(f'self.config: {self.config}')
         set_random_seed(self.config.seed)
         self.optimizer = self.config.optimizer
         train_state_shapes = jax.eval_shape(self.init_fn, next_rng())
@@ -1270,7 +1405,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         logger.info(f'dp: {dp}')
         logger.info(f"fsdp : {fsdp}")
         logger.info(f"mp: {mp}")
-        self.gen_length = 1 #
+        self.gen_length = 1
         self.rng = next_rng()
 
         checkpoint_config = StreamingCheckpointer.get_default_config({'save_optimizer_state': self.config.save_optimizer_state})
@@ -1318,12 +1453,13 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         logger.info(f"Total parameters: {param_count}")
         
     def train(self, sample):
+        import pickle
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
         rng_generator = JaxRNG(self.rng)
         rngs = rng_generator(self.config.rng_keys)
         self.rng = rng_generator()
-        loss, acc, self.state = self.train_(self.state, input_tokens, target_tokens, masks, rngs)
-        return loss, acc
+        forward_output, _, self.state = self.train_(self.state, input_tokens, target_tokens, masks, rngs)
+        return forward_output
     
     def eval(self, sample):
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
@@ -1352,6 +1488,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         return_dict: bool = True,
     ):
         batch_size, seq_length = input_ids.shape
+        self.sow('intermediates', 'input_ids', input_ids,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
         if position_ids is None:
@@ -1371,16 +1508,16 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
 
         hidden_states = outputs[0]
+        self.sow('intermediates', 'last_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
 
         if self.config.tie_word_embeddings:
             shared_kernel = self.transformer.variables["params"]["wte"]["embedding"].T
             lm_logits = self.lm_head.apply({"params": {"kernel": shared_kernel}}, hidden_states)
         else:
             lm_logits = self.lm_head(hidden_states)
-
+        self.sow('intermediates', 'lm_logits', lm_logits[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         if not return_dict:
             return (lm_logits,) + outputs[1:]
-
         return FlaxCausalLMOutput(logits=lm_logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions)
 
 
@@ -1605,4 +1742,5 @@ class LLaMATokenizer(PreTrainedTokenizer):
         if token_ids_1 is None:
             return len(token_ids_0 + eos) * [0]
         return len(token_ids_0 + eos + token_ids_1 + eos) * [0]
+
 
