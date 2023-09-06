@@ -192,7 +192,7 @@ if __name__ == "__main__":
         wandb.init(project=wandb_project, name=wandb_name, config=params, resume=True)
     host_count = tpu_size // cores_per_replica
     skip_step = params['skip_step']
-    
+    logger.info(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
     with mesh:
         logger.info(f'Host count: {host_count} Process id: {jax.process_index()}')
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
@@ -218,22 +218,20 @@ if __name__ == "__main__":
         logger.info(f'Init state time: {time.time() - start}')
 
         start = time.time()
-        step = skip_step + 1
+        step = skip_step
         # train complie
         output = model.train(build_sample(next(train_dataset), mesh=mesh))
         loss, acc = output['loss'], output['acc']
         logger.info(f"Train fn compiled in {time.time() - start:.06}s")
-        wandb_stats = {'train/loss': loss, 'train/acc': acc}
+        wandb_stats = {'train/loss': loss.item(), 'train/acc': acc.item()}
         wandb.log(wandb_stats)
         logger.info(f'Step: {step}: {wandb_stats}')
-        logger.info(wandb_stats)
         # eval complie
         start = time.time()
         for val_set in val_sets.values():
             model.eval(build_sample(next(val_set), mesh=mesh))
         logger.info(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
-        logger.info(f'Skip_step: {skip_step}, train start step is set to {skip_step}')
         start = time.time()
         step_time_deque = deque(maxlen=5)
         while True:
