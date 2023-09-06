@@ -232,6 +232,7 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
         -1,
     )
     token_log_prob = jnp.where(valid > 0.0, token_log_prob, jnp.array(0.0))
+    
     loss = -jnp.mean(jnp.sum(token_log_prob, axis=-1) / valid_text_length)
     correct = jnp.where(
         valid > 0.0,
@@ -239,7 +240,8 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
         jnp.array(False)
     )
     accuracy = jnp.mean(jnp.sum(correct, axis=-1) / valid_text_length)
-    return loss, accuracy
+    loss_out = {'acc': accuracy, 'token_log_prob': token_log_prob}
+    return loss, loss_out
 
 
 def global_norm(tree):

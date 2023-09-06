@@ -198,6 +198,7 @@ if __name__ == "__main__":
         train_batch_size = (gradient_accumulation_steps, per_replica_batch)
         logger.info(f'Train_batch_size: {train_batch_size}')
         train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num, skip_step=skip_step)
+#         train_dataset = load_tfrecord_dataset(f"{params['train_set']}", batch_size=train_batch_size, seq_len=params['seq'], repeat=eopch_num, skip_step=0)
         val_batch_size = per_replica_batch
         sequences_per_step = gradient_accumulation_steps * (per_replica_batch * tpu_size // cores_per_replica)
         tokens_per_step = params['seq'] * sequences_per_step
@@ -222,8 +223,8 @@ if __name__ == "__main__":
         logger.info(f"Train fn compiled in {time.time() - start:.06}s")
         # eval complie
         start = time.time()
-        for val_set in val_sets.values():
-            model.eval(build_sample(next(val_set), mesh=mesh))
+#         for val_set in val_sets.values():
+#             model.eval(build_sample(next(val_set), mesh=mesh))
         logger.info(f"Eval fn compiled in {time.time() - start:.06}s")
         # start train
         step = skip_step
@@ -233,8 +234,9 @@ if __name__ == "__main__":
         while True:
             step_start = time.time()
             input_data = next(train_dataset)
-            loss, acc = model.train(build_sample(input_data, mesh=mesh))
-            loss, acc = loss.item(), acc.item()
+            output = model.train(build_sample(input_data, mesh=mesh))
+            loss = output['loss'].item()
+            acc = output['acc'].item()
             step_time_deque.append(time.time() - step_start)
 
             if (step % ckpt_every == 0 and step) or step == total_steps:
@@ -282,8 +284,11 @@ if __name__ == "__main__":
                     "sequences_processed": sequences_processed,
                     "tokens_processed": tokens_processed,
                 }
-            logger.info(f'Step: {step}: {wandb_stats}')
             if jax.process_index() == 0:
                 wandb.log(wandb_stats, step)
+                
+            logger.info(f'Step: {step}: {wandb_stats}')
+            if step == 15:
+                exit()
         py_utils.sync_global_devices('Train finished.......')
         
