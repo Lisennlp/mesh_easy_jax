@@ -103,7 +103,8 @@ def shard(data, batch_size=None):  # XD
 
 
 def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, repeat=3, skip_step=0):  # XD
-    tf.random.set_seed(42)
+#     tf.random.set_seed(42)
+    tf.random.set_seed(1234)
     fnames = [index_fname] if index_fname.endswith('.tfrecords') else open(index_fname).read().splitlines()
     ds = tf.data.Dataset.from_tensor_slices(fnames)#.repeat()
     ds = ds.apply(tf.data.TFRecordDataset)
@@ -117,7 +118,7 @@ def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, 
                         drop_remainder=True)
     ds = ds.prefetch(10)
     ds = ds.repeat(repeat)
-    ds = ds.skip(skip_step)
+    ds = ds.skip(skip_step + 1)
     return map(lambda x: shard(x, batch_size=batch_size), iter(ds))
 
 
