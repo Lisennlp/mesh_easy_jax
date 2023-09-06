@@ -306,6 +306,19 @@ class LLaMAConfig2(PretrainedConfig):
             raise ValueError(f'Unsupported load config type: {load_type}')
 
 
+class BaseLayer(nn.Module):
+    config: LLaMAConfig
+    dtype: jnp.dtype = jnp.float32
+    param_dtype: jnp.dtype=jnp.float32
+    precision: Optional[Union[jax.lax.Precision, str]]=None
+    multable='intermediates'
+
+    def add_summary(self, name, input, level=0):
+        logger.info(f'[{self.multable} -- {name}] level is {level}')
+        if level:
+            self.sow(self.multable, name, input,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+
+
 class RMSNorm(nn.Module):
     dim: int
     eps: float=1e-6
@@ -320,27 +333,28 @@ class RMSNorm(nn.Module):
             self.param_dtype,
         )
 
-#     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
-#         return x * jax.lax.rsqrt(jnp.square(x).mean(-1, keepdims=True) + self.eps)
     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
-        x_square = jnp.square(x)
-        self.sow('intermediates', 'x_square', x_square[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        x_mean = x_square.mean(-1, keepdims=True)
-        self.sow('intermediates', 'x_mean', x_mean[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        x_eps = x_mean + self.eps
-        self.sow('intermediates', 'x_eps', x_eps[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        x_rsqrt = jax.lax.rsqrt(x_eps)
-        self.sow('intermediates', 'x_rsqrt', x_rsqrt[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        x_cheng = x * x_rsqrt
-        self.sow('intermediates', 'x_cheng', x_cheng[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        return x_cheng
+        return x * jax.lax.rsqrt(jnp.square(x).mean(-1, keepdims=True) + self.eps)
+        
+    # def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
+    #     x_square = jnp.square(x)
+    #     self.add_summary('x_square', x_square[1], level=self.config.summary_level)
+
+    #     x_mean = x_square.mean(-1, keepdims=True)
+    #     self.add_summary('x_mean', x_mean[1], level=self.config.summary_level)
+
+    #     x_eps = x_mean + self.eps
+    #     self.add_summary('x_eps', x_eps[1], level=self.config.summary_level)
+
+    #     x_rsqrt = jax.lax.rsqrt(x_eps)
+    #     self.add_summary('x_rsqrt', x_rsqrt[1], level=self.config.summary_level)
+
+    #     x_cheng = x * x_rsqrt
+    #     self.add_summary('x_cheng', x_cheng[1], level=self.config.summary_level)
+    #     return x_cheng
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-#         self.sow('intermediates', 'norm_weight', self.weight,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-#         print(f'self.dtype: {self.dtype} self.eps: {self.eps}')
-#         self.sow('intermediates', 'norm_x', x[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         output = self._norm(x.astype(self.dtype)).astype(self.dtype)
-#         self.sow('intermediates', 'norm_input', output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         weight = jnp.asarray(self.weight, self.dtype)
         return output * weight
 
@@ -423,7 +437,7 @@ def apply_rotary_emb_praxis(
     return final
 
 
-class FlaxLLaMAAttention(nn.Module):
+class FlaxLLaMAAttention(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -530,56 +544,49 @@ class FlaxLLaMAAttention(nn.Module):
         dtype: Optional[Dtype] = None,
         precision: PrecisionLike = None,
     ):
-      query, key = promote_dtype(query, key, dtype=dtype)
-      dtype = query.dtype
-      print(f'precision: {precision} || dtype: {dtype} || dropout_rate: {dropout_rate}')
-      print(f'bias: {bias} || mask: {mask} || deterministic: {deterministic}')
+        query, key = promote_dtype(query, key, dtype=dtype)
+        dtype = query.dtype
+        logger.info(f'[Dot] -- precision: {precision} || query and key dtype: {dtype} || dropout_rate: {dropout_rate}')
+        logger.info(f'[Dot] -- bias: {bias} || mask: {mask} || deterministic: {deterministic}')
 
-      assert query.ndim == key.ndim, 'q, k must have same rank.'
-      assert query.shape[:-3] == key.shape[:-3], 'q, k batch dims must match.'
-      assert query.shape[-2] == key.shape[-2], 'q, k num_heads must match.'
-      assert query.shape[-1] == key.shape[-1], 'q, k depths must match.'
+        assert query.ndim == key.ndim, 'q, k must have same rank.'
+        assert query.shape[:-3] == key.shape[:-3], 'q, k batch dims must match.'
+        assert query.shape[-2] == key.shape[-2], 'q, k num_heads must match.'
+        assert query.shape[-1] == key.shape[-1], 'q, k depths must match.'
 
-      # calculate attention matrix
-      depth = query.shape[-1]
-      self.sow('intermediates', '[dot]before_query', query[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-      self.sow('intermediates', '[dot]before_key', key[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        
-      query = query / jnp.sqrt(depth).astype(dtype)
-      self.sow('intermediates', '[dot]scale_query', query[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-      print(f'querydtype: {query.dtype}')
-      print(f'keydtype: {key.dtype}')
-      # attn weight shape is (batch..., num_heads, q_length, kv_length)
-      attn_weights = jnp.einsum(
-          '...qhd,...khd->...hqk', query, key, precision=precision
-      )
-      self.sow('intermediates', '[dot]attn_weights', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-      # apply attention bias: masking, dropout, proximity bias, etc.
-      if bias is not None:
-        attn_weights = attn_weights + bias
-      # apply attention mask
-      if mask is not None:
-        big_neg = jnp.finfo(dtype).min
-        attn_weights = jnp.where(mask, attn_weights, big_neg)
+        # calculate attention matrix
+        depth = query.shape[-1]
+        query = query / jnp.sqrt(depth).astype(dtype)
+        self.add_summary('scale_query', query[1], level=self.config.summary_level)
+        # attn weight shape is (batch..., num_heads, q_length, kv_length)
+        attn_weights = jnp.einsum(
+            '...qhd,...khd->...hqk', query, key, precision=precision
+        )
+        self.add_summary('q_dot_k', attn_weights[1], level=self.config.summary_level)
+        # apply attention bias: masking, dropout, proximity bias, etc. # not None
+        if bias is not None:
+            attn_weights = attn_weights + bias
+        # apply attention mask: lsp: None
+        if mask is not None:
+            big_neg = jnp.finfo(dtype).min
+            attn_weights = jnp.where(mask, attn_weights, big_neg)
+        self.add_summary('q_dot_k_mask', attn_weights[1], level=self.config.summary_level)
+        # normalize the attention weights
+        attn_weights = jax.nn.softmax(attn_weights).astype(dtype)
+        self.add_summary('q_dot_k_mask_softmax', attn_weights[1], level=self.config.summary_level)
+        # apply attention dropout
+        if not deterministic and dropout_rate > 0.0:
+            keep_prob = 1.0 - dropout_rate
+            if broadcast_dropout:
+            # dropout is broadcast across the batch + head dimensions
+                dropout_shape = tuple([1] * (key.ndim - 2)) + attn_weights.shape[-2:]
+                keep = random.bernoulli(dropout_rng, keep_prob, dropout_shape)  # type: ignore
+            else:
+                keep = random.bernoulli(dropout_rng, keep_prob, attn_weights.shape)  # type: ignore
+            multiplier = keep.astype(dtype) / jnp.asarray(keep_prob, dtype=dtype)
+            attn_weights = attn_weights * multiplier
 
-      # normalize the attention weights
-      self.sow('intermediates', '[dot]attn_weights_mask', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-      attn_weights = jax.nn.softmax(attn_weights).astype(dtype)
-      self.sow('intermediates', '[dot]attn_weights_softmax', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-
-      # apply attention dropout
-      if not deterministic and dropout_rate > 0.0:
-        keep_prob = 1.0 - dropout_rate
-        if broadcast_dropout:
-          # dropout is broadcast across the batch + head dimensions
-          dropout_shape = tuple([1] * (key.ndim - 2)) + attn_weights.shape[-2:]
-          keep = random.bernoulli(dropout_rng, keep_prob, dropout_shape)  # type: ignore
-        else:
-          keep = random.bernoulli(dropout_rng, keep_prob, attn_weights.shape)  # type: ignore
-        multiplier = keep.astype(dtype) / jnp.asarray(keep_prob, dtype=dtype)
-        attn_weights = attn_weights * multiplier
-
-      return attn_weights
+        return attn_weights
 
     def __call__(
         self,
@@ -593,6 +600,10 @@ class FlaxLLaMAAttention(nn.Module):
         idx=None
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
+        self.add_summary('query_proj', xq[1], level=self.config.summary_level)
+        self.add_summary('key_proj', xk[1], level=self.config.summary_level)
+        self.add_summary('value_proj', xv[1], level=self.config.summary_level)
+
         # 加上会稍微耗时一点
         # xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
         # xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
@@ -602,10 +613,6 @@ class FlaxLLaMAAttention(nn.Module):
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
         
-        self.sow('intermediates', f'xq_proj{idx}', xq[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        self.sow('intermediates', f'xk_proj{idx}', xk[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        self.sow('intermediates', f'xv_proj{idx}', xv[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-
         if not self.config.alibi:
             if self.config.rotary_from == 'easylm':
                 # lsp easylm
@@ -617,8 +624,9 @@ class FlaxLLaMAAttention(nn.Module):
                 xk = apply_rotary_emb_praxis(xk, position=position_ids, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
-        self.sow('intermediates', f'xq_rotary{idx}', xq[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        self.sow('intermediates', f'xk_rotary{idx}', xk[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        
+        self.add_summary('query_rotary', xq[1], level=self.config.summary_level)
+        self.add_summary('key_rotary', xk[1], level=self.config.summary_level)
 
         if self.has_variable("cache", "cached_key"):
             mask_shift = self.variables["cache"]["cache_index"]
@@ -658,7 +666,7 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
         # attention_bias = with_sharding_constraint(attention_bias, PS(("dp", "fsdp"), "mp", None, None))
-
+        
         if self.config.alibi:
             # fcm_mask : n_head * qlen * klen  ||  attention_bias: bsz * num_heads * qlen * klen
             if mask_shift is not None:
@@ -672,14 +680,13 @@ class FlaxLLaMAAttention(nn.Module):
             if len(attention_bias.shape) == 3:
                 attention_bias = jnp.expand_dims(attention_bias, axis=(1, ))
             attention_bias += fcm_mask
-
+        self.add_summary('attn_mask', attention_bias[1], level=self.config.summary_level)
         # lsp: batch:8 -> 256M
         # q, k作为 q.math
         # query = query / jnp.sqrt(depth).astype(dtype) -> depth: head_dim
         # attn_weights = jnp.einsum('...qhd,...khd->...hqk', query, key, precision=precision)
         # attn_weights: b * n_head * qlen * klen
         # xq: b * qlen * n_head * head_size || xk: b * klen * n_head * head_size
-        self.sow('intermediates', f'attention_mask{idx}', attention_bias[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         attn_weights = self.dot_product_attention_weights(
             xq,
             xk,
@@ -690,7 +697,8 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-        self.sow('intermediates', f'attn_score_softmax', attn_weights[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_score_softmax', attn_weights[1], level=self.config.summary_level)
+
         # lsp shape: b * qlen * n_head * klen
         # attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))
         # lsp: paxml
@@ -698,19 +706,18 @@ class FlaxLLaMAAttention(nn.Module):
 
         # lsp: batch:8 -> 256M
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
-        self.sow('intermediates', f'score_dot_value', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_score_dot_value', attn_output[1], level=self.config.summary_level)
         attn_output = self._merge_heads(attn_output)
         # lsp: paxml ?
         # attn_output = with_sharding_constraint(attn_output, PS(("dp", "fsdp"),  None, "mp"))
         attn_output = self.wo(attn_output)
-        self.sow('intermediates', f'value_post', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_post', attn_output[1], level=self.config.summary_level)
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-        self.sow('intermediates', f'value_post_drop', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
         return outputs
 
 
-class FlaxLLaMAMLP(nn.Module):
+class FlaxLLaMAMLP(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -746,29 +753,25 @@ class FlaxLLaMAMLP(nn.Module):
         self.dropout = nn.Dropout(rate=self.config.resid_pdrop)
 
     def __call__(self, x: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
-        ffn1_gate_output = self.w1(x)
-        self.sow('intermediates', f'ffn1_gate_output', ffn1_gate_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-
-        ffn1_gate_output_activ = nn.silu(ffn1_gate_output)
-        self.sow('intermediates', f'ffn1_gate_output_activ', ffn1_gate_output_activ[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        
+        ffn1_gate = self.w1(x)
+        self.add_summary('ffn1_gate', ffn1_gate[1], level=self.config.summary_level)
+        ffn1_gate_activ = nn.silu(ffn1_gate)
+        self.add_summary('ffn1_gate_activ', ffn1_gate_activ[1], level=self.config.summary_level)
         ffn1_output = self.w3(x)
-        self.sow('intermediates', f'ffn1_output', ffn1_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('ffn1_output', ffn1_output[1], level=self.config.summary_level)
         
-        
-        ffn1_output_activ = ffn1_gate_output_activ * ffn1_output
-        self.sow('intermediates', f'ffn1_output_activ', ffn1_output_activ[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        
+        ffn1_output_activ = ffn1_gate_activ * ffn1_output
+        self.add_summary('ffn1_gate_dot_ffn1_output', ffn1_output_activ[1], level=self.config.summary_level)
+
         ffn2_output = self.w2(ffn1_output_activ)
-        self.sow('intermediates', f'ffn2_output', ffn2_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-        
+        self.add_summary('ffn_residual', ffn2_output[1], level=self.config.summary_level)
         x = self.dropout(ffn2_output, deterministic=deterministic)
-        self.sow('intermediates', f'ffn_output', x[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('ffn_residual_drop', x[1], level=self.config.summary_level)
 #         x = self.w2(nn.silu(self.w1(x)) * self.w3(x))
         return x
 
 
-class FlaxLLaMABlock(nn.Module):
+class FlaxLLaMABlock(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -811,9 +814,10 @@ class FlaxLLaMABlock(nn.Module):
         fcm_mask: Optional[jnp.ndarray] = None,
         idx=None
     ):
-        self.sow('intermediates', f'input', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('block_input', hidden_states[1], level=self.config.summary_level)
         attn_norm = self.attention_norm(hidden_states)
-        self.sow('intermediates', f'input_norm', attn_norm[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_pre_norm', attn_norm[1], level=self.config.summary_level)
+
         attn_outputs = self.attention(
             attn_norm,
             attention_mask=attention_mask,
@@ -825,18 +829,18 @@ class FlaxLLaMABlock(nn.Module):
             idx=idx
         )
         attn_output = attn_outputs[0]
-        self.sow('intermediates', f'attn_drop', attn_output[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_residual_drop', attn_output[1], level=self.config.summary_level)
         hidden_states = hidden_states + attn_output
-        self.sow('intermediates', f'residual_attn_drop', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('attn_output', hidden_states[1], level=self.config.summary_level)
         ffn_norm = self.ffn_norm(hidden_states)
-        self.sow('intermediates', f'ffn_norm_{idx}', ffn_norm[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('ffn_pre_norm', ffn_norm[1], level=self.config.summary_level)
         feed_forward_hidden_states = self.feed_forward(
             ffn_norm,
             deterministic=deterministic,
         )
-        self.sow('intermediates', 'ffn_output', feed_forward_hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('ffn_residual', feed_forward_hidden_states[1], level=self.config.summary_level)
         hidden_states = hidden_states + feed_forward_hidden_states
-        self.sow('intermediates', f'residual_ffn_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('ffn_output', feed_forward_hidden_states[1], level=self.config.summary_level)
         return (hidden_states,) + attn_outputs[1:]
 
 
@@ -988,7 +992,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
         return outputs
 
 
-class FlaxLLaMABlockCollection(nn.Module):
+class FlaxLLaMABlockCollection(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -1099,7 +1103,7 @@ class FlaxLLaMABlockCollection(nn.Module):
         return outputs
 
 
-class FlaxLLaMAModule(nn.Module):
+class FlaxLLaMAModule(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -1140,11 +1144,12 @@ class FlaxLLaMAModule(nn.Module):
         return_dict: bool = True,
     ):
 #         deterministic = Flase
-        input_embeds = self.wte(input_ids.astype("i4"))
-        self.sow('intermediates', 'input_embeds', input_embeds,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
         print(f'deterministic: {deterministic} self.config.embd_pdrop: {self.config.embd_pdrop}')
+
+        input_embeds = self.wte(input_ids.astype("i4"))
+        self.add_summary(f'input_embeds', input_embeds[1], level=self.config.summary_level)
         hidden_states = self.dropout(input_embeds, deterministic=deterministic)
-        self.sow('intermediates', 'input_embeds_drop', hidden_states,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary(f'input_embeds_drop', hidden_states[1], level=self.config.summary_level)
 
         outputs = self.h(
             hidden_states,
@@ -1157,9 +1162,10 @@ class FlaxLLaMAModule(nn.Module):
             return_dict=return_dict,
         )
         hidden_states = outputs[0]
-        self.sow('intermediates', 'last_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary(f'last_output', hidden_states[1], level=self.config.summary_level)
         hidden_states = self.ln_f(hidden_states)
-        self.sow('intermediates', 'last_norm', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary(f'last_norm', hidden_states[1], level=self.config.summary_level)
+
         if output_hidden_states:
             all_hidden_states = outputs[1] + (hidden_states,)
             outputs = (hidden_states, all_hidden_states) + outputs[2:]
@@ -1180,7 +1186,7 @@ class FlaxLLaMAModel(FlaxLLaMAPreTrainedModel):
     module_class = FlaxLLaMAModule
 
 
-class FlaxLLaMAForCausalLMModule(nn.Module):
+class FlaxLLaMAForCausalLMModule(BaseLayer):
     config: LLaMAConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -1453,7 +1459,6 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         logger.info(f"Total parameters: {param_count}")
         
     def train(self, sample):
-        import pickle
         input_tokens, target_tokens, masks = sample['obs'], sample['target'], sample['masks']
         rng_generator = JaxRNG(self.rng)
         rngs = rng_generator(self.config.rng_keys)
@@ -1488,7 +1493,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         return_dict: bool = True,
     ):
         batch_size, seq_length = input_ids.shape
-        self.sow('intermediates', 'input_ids', input_ids,  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('input_ids', input_ids, level=self.config.summary_level)
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
         if position_ids is None:
@@ -1508,14 +1513,14 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         )
 
         hidden_states = outputs[0]
-        self.sow('intermediates', 'last_output', hidden_states[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
-
+        self.add_summary('last_output', hidden_states[1], level=self.config.summary_level)
         if self.config.tie_word_embeddings:
             shared_kernel = self.transformer.variables["params"]["wte"]["embedding"].T
             lm_logits = self.lm_head.apply({"params": {"kernel": shared_kernel}}, hidden_states)
         else:
             lm_logits = self.lm_head(hidden_states)
-        self.sow('intermediates', 'lm_logits', lm_logits[1],  init_fn=lambda :0, reduce_fn=lambda a, b: b)
+        self.add_summary('lm_logits', lm_logits[1], level=self.config.summary_level)
+
         if not return_dict:
             return (lm_logits,) + outputs[1:]
         return FlaxCausalLMOutput(logits=lm_logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions)
