@@ -47,7 +47,7 @@ def build_model(params, version=1, ray=True):
         optax.clip_by_global_norm(1.0),
         optax.scale_by_adam(),
         additive_weight_decay(params["weight_decay"]),
-        optax.scale(-1),
+        optax.scale(-1), # updates = jax.tree_util.tree_map(lambda g: step_size * g, updates)
         optax.scale_by_schedule(scheduler)
     )
     params["optimizer"] = opt

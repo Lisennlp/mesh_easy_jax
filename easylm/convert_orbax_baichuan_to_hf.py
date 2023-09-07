@@ -17,6 +17,13 @@ import orbax.checkpoint
 
 
 LLAMA_STANDARD_CONFIGS = {
+    '1b': {
+        'dim': 4096,
+        'intermediate_size': 11008,
+        'n_layers': 2,
+        'n_heads': 32,
+        'norm_eps': 1e-6,
+    },
     '7b': {
         'dim': 4096,
         'intermediate_size': 11008,
@@ -62,7 +69,7 @@ def write_model(loaded, model_path, model_size):
     dim = params["dim"]
     dims_per_head = dim // n_heads
     base = 10000.0
-    inv_freq = 1.0 / (base ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
+    # inv_freq = 1.0 / (base ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
     # permute for sliced rotary
     def permute(w):
         """note: w must be torch type"""
@@ -127,8 +134,9 @@ def main(read_dir, save_dir, step, model_size):
     w = load_checkpoint(read_dir, step)
     loaded_w = {}
     for k, v in flatten_dict(w['params']['params']).items():
+        print(f'k: {k} || v: {v.dtype}')
         k = '.'.join(k)
-        loaded_w[k] = torch.from_numpy(v).to(torch.float16)
+        loaded_w[k] = torch.from_numpy(v).to(torch.float32)
     print(f'Load checkpoint finished, take time: {time.time() - start}s......\n')
     
     print(f'Now start convert and write checkpoint...')
@@ -147,7 +155,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--read_dir', type=str, help='Need to be converted model weight dir. it is a dir, stong recomand use local dir instead of cloud bucket.')
     parser.add_argument('--save_dir', type=str,  help='Save model weight file path, it is a dir.')
-    parser.add_argument('--model_size', type=str, default='7b', choices=['7b', '13b', '30b', '65b'], help='model size')
+    parser.add_argument('--model_size', type=str, default='7b', choices=['1b', '7b', '13b', '30b', '65b'], help='model size')
     parser.add_argument('--step', type=int, default=None, help='load checkpoint step if None, load latest step checkpoint')
 
     args = parser.parse_args()

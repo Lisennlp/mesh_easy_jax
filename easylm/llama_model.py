@@ -1230,7 +1230,7 @@ class FlaxLLaMAForCausalLMModule(BaseLayer):
             )
             logits = output.logits
             loss, forward_output = cross_entropy_loss_and_accuracy(logits, target_token, valid=mask)
-#             forward_output.update(inter_values)
+            forward_output.update(inter_values)
             return loss, forward_output
 
         def microbatch(old_grad, batch):

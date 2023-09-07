@@ -1,11 +1,11 @@
 {
     "dp": 1,
-    "fsdp": 1,
-    "mp": 8,
+    "fsdp": 8,
+    "mp": 1,
     "load_mode": "orbax",
     "save_mode": "orbax",
-    "embd_pdrop": 0.1,
-    "resid_pdrop": 0.05,
+    "embd_pdrop": 0.0,
+    "resid_pdrop": 0.0,
     "intermediate_size": 11008,
     "transformation": "pjit", 
     "num_hidden_layers":32,
@@ -18,7 +18,7 @@
     
     "seq": 2048,
     "cores_per_replica": 8,
-    "per_replica_batch": 4,
+    "per_replica_batch": 2,
     "gradient_accumulation_steps": 4,
     "seed": 42,
   

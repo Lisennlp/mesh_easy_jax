@@ -155,5 +155,6 @@ item = {
 mngr = orbax.checkpoint.CheckpointManager(save_dir, item)
 
 start = time.time()
-mngr.save(step, {'params':  flax.core.frozen_dict.freeze({'params': jax_weights}), 'step': jax.numpy.array([step])})
+# 第一个params为文件夹，真正保存的为flax.core.frozen_dict.freeze(jax_weights)
+mngr.save(step, {'params':  {'params': flax.core.frozen_dict.freeze(jax_weights)}, 'step': jax.numpy.array([step])})
 print(f'Save orbax format take time: {time.time() - start}')

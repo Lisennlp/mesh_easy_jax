@@ -3,6 +3,7 @@ import json
 import time
 import os
 import re
+import pickle
 from collections import defaultdict
 import subprocess
 import multiprocessing
@@ -76,6 +77,7 @@ DEFAULT_PARAMS = {
     'skip_step': 0,
     'load_checkpoint': [],
     'alibi': False,
+    'summary_level':1,
 }
 
 
@@ -218,7 +220,7 @@ if __name__ == "__main__":
         logger.info(f'Init state time: {time.time() - start}')
 
         start = time.time()
-        step = skip_step
+        step = skip_step + 1
         # train complie
         output = model.train(build_sample(next(train_dataset), mesh=mesh))
         loss, acc = output['loss'], output['acc']
@@ -291,5 +293,8 @@ if __name__ == "__main__":
                 wandb.log(wandb_stats, step)
                 
             logger.info(f'Step: {step}: {wandb_stats}')
+            # if step == 21:
+            #     pickle.dump(output, open(f'mesh_summary_{step}.pkl', 'wb'))
+            #     exit()
         py_utils.sync_global_devices('Train finished.......')
         
