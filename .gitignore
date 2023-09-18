@@ -11,3 +11,4 @@ download
 __pycache__
 commit.sh
 wandb
+.vscode
