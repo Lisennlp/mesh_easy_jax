@@ -41,7 +41,9 @@ class TFRecordLoader:
         for i in self.clean_index:
             compression = "ZLIB" if "zstd" in i else ""
 
-            file = tf.data.TFRecordDataset(i, compression_type=compression).map(self.parse_fn, num_parallel_calls=tf.data.AUTOTUNE)
+            file = tf.data.TFRecordDataset(i, compression_type=compression).map(
+                self.parse_fn, num_parallel_calls=tf.data.AUTOTUNE
+            )
             file = file.apply(tf.data.experimental.dense_to_ragged_batch(np.prod(self.bs), drop_remainder=True))
             file = file.prefetch(10)
 
@@ -68,18 +70,13 @@ class TFRecordLoader:
             return self.get_samples()
 
     def get_state(self):
-        return {
-            "used": self.used,
-            "file_idx": self.file_idx
-        }
+        return {"used": self.used, "file_idx": self.file_idx}
 
 
 class TFRecordNewInputs(TFRecordLoader):
     def __init__(self, index_fname, batch_size, sample_size, restore_state=None):
         def tf_parse(example_proto):
-            features = {
-                "text": tf.io.VarLenFeature(tf.int64)
-            }
+            features = {"text": tf.io.VarLenFeature(tf.int64)}
             parsed_features = tf.io.parse_single_example(example_proto, features)
 
             return tf.cast(tf.sparse.to_dense(tf.sparse.reorder(parsed_features["text"])), tf.uint32)
@@ -87,12 +84,13 @@ class TFRecordNewInputs(TFRecordLoader):
         super().__init__(index_fname, batch_size, tf_parse, restore_state=restore_state)
 
 
-def _parse_function(example_proto): # https://zhuanlan.zhihu.com/p/552951305  # XD
+def _parse_function(example_proto):  # https://zhuanlan.zhihu.com/p/552951305  # XD
     feature_desc = {"input_ids": tf.io.VarLenFeature(tf.int64), "labels": tf.io.VarLenFeature(tf.int64)}
     example = tf.io.parse_single_example(example_proto, feature_desc)
     for name in list(example.keys()):
         t = example[name]
-        if t.dtype == tf.int64: t = tf.cast(t, dtype=tf.int32)
+        if t.dtype == tf.int64:
+            t = tf.cast(t, dtype=tf.int32)
         example[name] = tf.sparse.to_dense(t, default_value=0)
         # example[name] = tf.sparse.to_dense(tf.sparse.reorder(t)) # mesh-transformer-jax
     return example
@@ -103,19 +101,21 @@ def shard(data, batch_size=None):  # XD
 
 
 def load_tfrecord_dataset(index_fname, batch_size, seq_len, restore_state=None, repeat=3, skip_step=0):  # XD
-#     tf.random.set_seed(42)
+    #     tf.random.set_seed(42)
     tf.random.set_seed(1234)
     fnames = [index_fname] if index_fname.endswith('.tfrecords') else open(index_fname).read().splitlines()
-    ds = tf.data.Dataset.from_tensor_slices(fnames)#.repeat()
+    ds = tf.data.Dataset.from_tensor_slices(fnames)  # .repeat()
     ds = ds.apply(tf.data.TFRecordDataset)
     # shard host data
     ds = ds.shard(jax.process_count(), jax.process_index())
     ds = ds.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
-    ds = ds.shuffle(buffer_size=10000) # 从文件中取buffer_size数据，然后打乱
-    ds = ds.padded_batch(batch_size=np.prod(batch_size), 
-                        padded_shapes={'input_ids': [seq_len], 'labels': [seq_len]},
-                        padding_values={'input_ids': 0, 'labels': 0}, 
-                        drop_remainder=True)
+    ds = ds.shuffle(buffer_size=10000)  # 从文件中取buffer_size数据，然后打乱
+    ds = ds.padded_batch(
+        batch_size=np.prod(batch_size),
+        padded_shapes={'input_ids': [seq_len], 'labels': [seq_len]},
+        padding_values={'input_ids': 0, 'labels': 0},
+        drop_remainder=True,
+    )
     ds = ds.prefetch(10)
     ds = ds.repeat(repeat)
     ds = ds.skip(skip_step + 1)
@@ -145,7 +145,7 @@ class TFRecordWIT(TFRecordLoader):
             output = []
 
             for text, dalle in zip(zip(*texts), example["dalle"]):
-                all_text = list(itertools.chain(*text))[-text_tokens+1:]
+                all_text = list(itertools.chain(*text))[-text_tokens + 1 :]
 
                 all_text += [tokenizer.pad_token_id] * ((text_tokens - 1) - len(all_text))
 
@@ -167,7 +167,6 @@ class TFRecordWIT(TFRecordLoader):
                 "mime_type": tf.io.FixedLenFeature([], tf.string),
                 "context_page_description": tf.io.FixedLenFeature([], tf.string),
                 "context_section_description": tf.io.FixedLenFeature([], tf.string),
-
                 "dalle": tf.io.FixedLenFeature([1024], tf.int64),
             }
 

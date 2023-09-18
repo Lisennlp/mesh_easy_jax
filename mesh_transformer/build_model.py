@@ -13,6 +13,7 @@ from easylm.llama_model import FlaxLLaMAForCausalLMModule
 import orbax
 from orbax import checkpoint
 
+
 def build_model(params, version=1, ray=True):
     cores_per_replica = params["cores_per_replica"]
     assert cores_per_replica == 8
@@ -27,13 +28,13 @@ def build_model(params, version=1, ray=True):
 
     # warmup_cosine_decay_schedule
     scheduler = optax.warmup_cosine_decay_schedule(
-                                                    init_value=0.0,
-                                                    peak_value=params['lr'],
-                                                    warmup_steps=params['warmup_ratio'] * params['total_steps'], 
-                                                    decay_steps=params['anneal_steps'],
-                                                    end_value=params["end_lr"],
-                                                    exponent=1.0,
-                                                    )
+        init_value=0.0,
+        peak_value=params['lr'],
+        warmup_steps=params['warmup_ratio'] * params['total_steps'],
+        decay_steps=params['anneal_steps'],
+        end_value=params["end_lr"],
+        exponent=1.0,
+    )
     # constant_with_warmup
     # scheduler = util.constant_with_warmup(params["warmup_steps"], params["anneal_steps"], params["lr"], params["end_lr"])
     # Linear_schedule
@@ -47,8 +48,8 @@ def build_model(params, version=1, ray=True):
         optax.clip_by_global_norm(1.0),
         optax.scale_by_adam(),
         additive_weight_decay(params["weight_decay"]),
-        optax.scale(-1), # updates = jax.tree_util.tree_map(lambda g: step_size * g, updates)
-        optax.scale_by_schedule(scheduler)
+        optax.scale(-1),  # updates = jax.tree_util.tree_map(lambda g: step_size * g, updates)
+        optax.scale_by_schedule(scheduler),
     )
     params["optimizer"] = opt
 
@@ -66,4 +67,3 @@ def build_model(params, version=1, ray=True):
     else:
         t = model_fn
     return t
-
