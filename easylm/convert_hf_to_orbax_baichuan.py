@@ -3,6 +3,8 @@ import time
 import argparse
 import socket
 
+os.environ["JAX_PLATFORMS"] = "cpu"
+
 import torch
 import numpy as np
 import flax
@@ -57,7 +59,7 @@ LLAMA_STANDARD_CONFIGS = {
     },
     '13b': {
         'dim': 5120,
-        'intermediate_size': 13824,
+        'intermediate_size': 13696,
         'n_layers': 40,
         'n_heads': 40,
         'norm_eps': 1e-6,
@@ -107,7 +109,7 @@ for i, ckpt_path in enumerate(ckpt_paths):
     for k, v in checkpoint.items():
         if k.startswith('model.'):
             k = k[6:]
-        ckpt[k] = v.to(torch.float16)
+        ckpt[k] = v.to(torch.float32)
 print(f'Load model weight take time: {time.time() - start}')
 
 params = LLAMA_STANDARD_CONFIGS[model_size]

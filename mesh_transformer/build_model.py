@@ -67,3 +67,6 @@ def build_model(params, version=1, ray=True):
     else:
         t = model_fn
     return t
+
+# ray run
+# gcloud compute tpus tpu-vm ssh llm-jax-v3-32 --zone=us-east1-d --worker=0 --command="/home/lishengping/miniconda3/bin/ray start --head --port=3333 --resources='{\"tpu\": 1}'"  --project=llm-tpu

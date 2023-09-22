@@ -318,7 +318,7 @@ class BaseLayer(nn.Module):
     multable = 'intermediates'
 
     def add_summary(self, name, input, level=0):
-        logger.info(f'[{self.multable} -- {name}] level is {level}')
+        # logger.info(f'[{self.multable} -- {name}] level is {level}')
         if level:
             self.sow(self.multable, name, input, init_fn=lambda: 0, reduce_fn=lambda a, b: b)
 
