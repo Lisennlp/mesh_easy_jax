@@ -1045,16 +1045,15 @@ class FlaxLLaMABlockCollection(BaseLayer):
         # n_head: head数量,  n_head * 1 * 1
         slopes = slopes[..., jnp.newaxis, jnp.newaxis]
         # 1 * 1 * position_len
-        baichuan1
-        position = jnp.arange(max_pos, dtype=self.dtype)[jnp.newaxis, jnp.newaxis, ...]
-        alibi = jnp.broadcast_to(slopes * position, (n_head, 1, max_pos))
-
-        # # baichuan2
-        # position_point = jnp.arange(max_pos) - max_pos + 1
-        # position_point = jnp.broadcast_to(position_point[jnp.newaxis, jnp.newaxis, ...], (n_head, 1, max_pos))
-        # diag = jnp.diag(position_point[0])
-        # position_point = position_point - diag[jnp.newaxis, jnp.newaxis, ...].transpose(0, -1, -2)
-        # alibi = jnp.broadcast_to(slopes * position_point, (n_head, 1, max_pos))
+        # # baichuan1
+        # position = jnp.arange(max_pos, dtype=self.dtype)[jnp.newaxis, jnp.newaxis, ...]
+        # alibi = jnp.broadcast_to(slopes * position, (n_head, 1, max_pos))
+        # baichuan2
+        position_point = jnp.arange(max_pos) - max_pos + 1
+        position_point = jnp.broadcast_to(position_point[jnp.newaxis, jnp.newaxis, ...], (n_head, 1, max_pos))
+        diag = jnp.diag(position_point[0])
+        position_point = position_point - diag[jnp.newaxis, jnp.newaxis, ...].transpose(0, -1, -2)
+        alibi = jnp.broadcast_to(slopes * position_point, (n_head, 1, max_pos))
 
         alibi_mask = jnp.triu(self._fill_with_neg_inf(jnp.zeros([max_pos, max_pos])), 1)
         alibi_mask = jnp.expand_dims(alibi_mask, axis=(0,)) + alibi
