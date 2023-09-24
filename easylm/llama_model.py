@@ -549,9 +549,8 @@ class FlaxLLaMAAttention(BaseLayer):
     ):
         query, key = promote_dtype(query, key, dtype=dtype)
         dtype = query.dtype
-        logger.info(f'[Dot] -- precision: {precision} || query and key dtype: {dtype} || dropout_rate: {dropout_rate}')
-        logger.info(f'[Dot] -- bias: {bias} || mask: {mask} || deterministic: {deterministic}')
-
+        # logger.info(f'[Dot] -- precision: {precision} || query and key dtype: {dtype} || dropout_rate: {dropout_rate}')
+        # logger.info(f'[Dot] -- bias: {bias} || mask: {mask} || deterministic: {deterministic}')
         assert query.ndim == key.ndim, 'q, k must have same rank.'
         assert query.shape[:-3] == key.shape[:-3], 'q, k batch dims must match.'
         assert query.shape[-2] == key.shape[-2], 'q, k num_heads must match.'
