@@ -123,7 +123,9 @@ for name, model_obj in model_objs.items():
             )
     model_obj.user_params = json.load(open(model_obj.config, 'r'))
     if model_obj.bucket_name:
-        model_obj.mngr = orbax.checkpoint.CheckpointManager(f'gs://{model_obj.bucket_name}/{model_obj.model_dir}', item)
+        model_path = f'gs://{model_obj.bucket_name}/{model_obj.model_dir}'
+        logger.info(f'Model path: {model_path}')
+        model_obj.mngr = orbax.checkpoint.CheckpointManager(model_path, item)
     else:
         model_obj.mngr = orbax.checkpoint.CheckpointManager(f'{model_obj.model_dir}', item)
     with jax.default_device(jax.devices("cpu")[0]):

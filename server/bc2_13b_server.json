@@ -1,0 +1,10 @@
+{
+    "baichuan-13b": {
+                "model_name": "baichuan-13b",
+                "bucket_name": "llm_base_models",
+                "model_dir": "baichuan_models/13b/2/paxml/orbax/xm_model_norm_step8000",
+                "vocab_file": "configs/baichuan2/tokenizer.model",
+                "config": "configs/baichuan2/32-13b.json",
+                "load_step": 8000
+                }
+    }
