@@ -16,7 +16,7 @@ from orbax import checkpoint
 
 def build_model(params, version=1, ray=True):
     cores_per_replica = params["cores_per_replica"]
-    assert cores_per_replica == 8
+    assert cores_per_replica in [8, 4]
     tpu_size = params["tpu_size"]
     host_count = tpu_size // cores_per_replica
     assert tpu_size in [8, 16, 32, 64, 128, 256, 512]

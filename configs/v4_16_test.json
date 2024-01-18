@@ -1,4 +1,5 @@
 {
+    "scratch": true,
     "dp": 1,
     "fsdp": 8,
     "mp": 1,
@@ -35,9 +36,9 @@
     "bucket": "llm_base_models",
     "model_dir": "test_0118",
   
-    "train_set": "gs://common_datasets/pythia_pile_idxmaps_tfrecord/pile.tfrecord.b1000",
+    "train_set": "gs://common_datasets/test/pile.tfrecord.b1000.tfrecords",
     "val_set": {
-              "test": "gs://common_datasets/pythia_pile_idxmaps_tfrecord/pile.tfrecord.b1000"
+              "test": "gs://common_datasets/test/pile.tfrecord.b1000.tfrecords"
     },
   
     "val_batches": 300,
