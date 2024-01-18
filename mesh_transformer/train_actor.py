@@ -5,7 +5,7 @@ from queue import Queue
 
 from mesh_transformer.util import head_print
 from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
-from jax.experimental import PartitionSpec as P
+from jax.sharding import PartitionSpec as P
 
 
 @ray.remote(resources={"tpu": 1})

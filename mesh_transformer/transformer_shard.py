@@ -15,7 +15,7 @@ from mesh_transformer.checkpoint import read_ckpt, write_ckpt, write_ckpt_v2, lo
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard, \
     TransformerLayerShardV1, TransformerLayerShardV2, Projection, EmbeddingShardV2
 from mesh_transformer.util import to_f32, to_bf16, maybe_shard, head_print, global_norm
-from jax.experimental import PartitionSpec as P
+from jax.sharding import PartitionSpec as P
 from jax.experimental.multihost_utils import host_local_array_to_global_array, global_array_to_host_local_array
 
 

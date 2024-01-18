@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 
 from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 maybe_shard = lambda x, y: x  # XD
-from jax.experimental import PartitionSpec as P
+from jax.sharding import PartitionSpec as P
 from jax.experimental.maps import thread_resources
 
 
