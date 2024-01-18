@@ -17,6 +17,9 @@ from tqdm import tqdm
 import tensorflow as tf
 from google.cloud import storage
 import jax
+
+jax.distributed.initialize()
+
 from jax.sharding import PartitionSpec as P
 from jax.experimental.multihost_utils import (
     host_local_array_to_global_array,
@@ -33,7 +36,6 @@ from easylm.llama_model import (
     LLaMATokenizer,
 )
 
-# jax.distributed.initialize()
 
 from log_utils import logger
 
