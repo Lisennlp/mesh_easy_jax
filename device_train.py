@@ -17,7 +17,7 @@ from tqdm import tqdm
 import tensorflow as tf
 from google.cloud import storage
 import jax
-from jax.experimental import PartitionSpec as P
+from jax.sharding import PartitionSpec as P
 from jax.experimental.multihost_utils import (
     host_local_array_to_global_array,
     global_array_to_host_local_array,
