@@ -1,7 +1,7 @@
 import functools
 
 import optax
-import ray
+# import ray
 import jax.numpy as jnp
 
 from mesh_transformer import util
