@@ -22,7 +22,7 @@ from jax.experimental.multihost_utils import (
     host_local_array_to_global_array,
     global_array_to_host_local_array,
 )
-from praxis import py_utils
+# from praxis import py_utils
 
 from mesh_transformer.build_model import build_model
 from tfrecord_loader import TFRecordNewInputs, load_tfrecord_dataset
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     mesh = jax.sharding.Mesh(devices, ("dp", "fsdp", "mp"))
     logger.info(f"Mesh: {mesh}")
 
-    py_utils.sync_global_devices("Train start.......")
+    # py_utils.sync_global_devices("Train start.......")
     if jax.process_index() == 0:
         wandb_project = params.get("wandb_project", "Linli-chinese-llama-finetune")
         wandb_name = params.get("name", "Linli-chinese-llama-finetune")
@@ -330,4 +330,4 @@ if __name__ == "__main__":
             # if step == 21:
             #     pickle.dump(output, open(f'mesh_summary_{step}.pkl', 'wb'))
             #     exit()
-        py_utils.sync_global_devices("Train finished.......")
+        # py_utils.sync_global_devices("Train finished.......")

@@ -1,0 +1,50 @@
+{
+    "dp": 1,
+    "fsdp": 8,
+    "mp": 1,
+    "load_mode": "orbax",
+    "save_mode": "orbax",
+    "embd_pdrop": 0,
+    "resid_pdrop": 0,
+    "intermediate_size": 13696,
+    "transformation": "pjit",
+    "num_hidden_layers":4,
+    "hidden_size": 5120,
+    "num_attention_heads": 40,
+    "vocab_size": 125696,
+    "norm": "rmsnorm",
+    "rotary_from": "easylmm",
+    "alibi": true,
+  
+    "seq": 2049,
+    "cores_per_replica": 4,
+    "per_replica_batch": 4,
+    "gradient_accumulation_steps": 1,
+    "seed": 42,
+  
+    "epoch_num": 3,
+    "anneal_steps": 19499,
+    "total_steps": 58497,
+    "lr": 8e-6,
+    "end_lr": 8e-7,
+    "weight_decay": 0.001,
+    "warmup_ratio": 0.02,
+  
+    "tpu_size": 8,
+  
+    "bucket": "llm_base_models",
+    "model_dir": "test_0118",
+  
+    "train_set": "gs://common_datasets/pythia_pile_idxmaps_tfrecord/pile.tfrecord.b1000",
+    "val_set": {
+              "test": "gs://common_datasets/pythia_pile_idxmaps_tfrecord/pile.tfrecord.b1000"
+    },
+  
+    "val_batches": 300,
+    "val_every": 1000,
+    "ckpt_every": 1000,
+    "keep_every": 3000,
+  
+    "name": "v4-16",
+    "wandb_project": "test"
+  }
