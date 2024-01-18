@@ -33,7 +33,7 @@ from easylm.llama_model import (
     LLaMATokenizer,
 )
 
-jax.distributed.initialize()
+# jax.distributed.initialize()
 
 from log_utils import logger
 
