@@ -1249,7 +1249,7 @@ class FlaxLLaMAForCausalLMModule(BaseLayer):
         # if masks is not None:
         #     logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: {masks.shape}')
         # else:
-        #     logger.info(f'Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
+        logger.info(f'index: {jax.process_index()} Train input_tokens: {input_tokens.shape} Target_tokens: {target_tokens.shape} Masks: None')
         def loss_and_accuracy(params, input_token, target_token, mask=None):
             # deterministic=False的时候有Dropout，否则无
             output, inter_values = self.apply(

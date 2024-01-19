@@ -259,9 +259,10 @@ if __name__ == "__main__":
         output = model.train(build_sample(next(train_dataset), mesh=mesh))
         loss, acc = output["loss"], output["acc"]
         logger.info(f"Train fn compiled in {time.time() - start:.06}s")
-        wandb_stats = {"train/loss": loss.item(), "train/acc": acc.item()}
-        wandb.log(wandb_stats)
-        logger.info(f"Step: {step}: {wandb_stats}")
+        if jax.process_index() == 0:
+            wandb_stats = {"train/loss": loss.item(), "train/acc": acc.item()}
+            wandb.log(wandb_stats)
+            logger.info(f"Step: {step}: {wandb_stats}")
         # eval complie
         start = time.time()
         for val_set in val_sets.values():

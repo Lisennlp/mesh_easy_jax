@@ -9,7 +9,7 @@
     "resid_pdrop": 0,
     "intermediate_size": 13696,
     "transformation": "pjit",
-    "num_hidden_layers":4,
+    "num_hidden_layers":2,
     "hidden_size": 5120,
     "num_attention_heads": 40,
     "vocab_size": 125696,
